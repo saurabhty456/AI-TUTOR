@@ -1,0 +1,58 @@
+.ct-interview__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.ct-interview-card__body {
+  padding: 20px 20px 22px;
+}
+
+.ct-interview-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.ct-interview-card__head h3 {
+  font-family: var(--ct-font-display);
+  font-size: 16px;
+  margin: 0;
+  color: var(--ct-text-primary);
+}
+
+.ct-interview-card__tag {
+  font-family: var(--ct-font-mono);
+  font-size: 11px;
+  color: var(--ct-violet);
+  background: rgba(169, 161, 245, 0.1);
+  border: 1px solid rgba(169, 161, 245, 0.25);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.ct-interview-card__body p {
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.ct-interview__cta {
+  display: inline-block;
+  margin-top: 28px;
+  font-family: var(--ct-font-mono);
+  font-size: 14px;
+  color: var(--ct-teal);
+  text-decoration: none;
+}
+
+.ct-interview__cta:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 700px) {
+  .ct-interview__grid {
+    grid-template-columns: 1fr;
+  }
+}
