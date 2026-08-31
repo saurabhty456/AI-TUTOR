@@ -1,77 +1,29 @@
-import { useState } from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+
 import LandingPage from "./LandingPage";
+import ChatPage from "./ChatPage";
+import ScorePage from "./ScorePage";
 
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import "katex/dist/katex.min.css";
-
-import "./App.css";
-
-type Message = {
-  role: "user" | "model";
-  content: string;
-};
+import QuizPage from "./components/QuizPage";
 
 function App() {
-  const [question, setQuestion] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [history, setHistory] = useState<Message[]>([]);
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Landing page */}
+        <Route path="/" element={<LandingPage />} />
 
-  const askTutor = async () => {
-    if (!question.trim()) return;
+        {/* AI Tutor */}
+        <Route path="/chat" element={<ChatPage />} />
 
-    const currentQuestion = question;
+        {/* Quiz */}
+        <Route path="/quiz" element={<QuizPage />} />
 
-    setQuestion("");
-    setLoading(true);
-
-    try {
-      const response = await fetch("http://127.0.0.1:8000/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: currentQuestion,
-          history: history,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to get response");
-      }
-
-      const data = await response.json();
-
-      setHistory((previousHistory) => [
-        ...previousHistory,
-        {
-          role: "user",
-          content: currentQuestion,
-        },
-        {
-          role: "model",
-          content: data.answer,
-        },
-      ]);
-    } catch (error) {
-      console.error(error);
-
-      setHistory((previousHistory) => [
-        ...previousHistory,
-        {
-          role: "model",
-          content: "Sorry, something went wrong. Please try again.",
-        },
-      ]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return <LandingPage />;
+        {/* Quiz Score */}
+        <Route path="/score" element={<ScorePage />} />
+      </Routes>
+    </BrowserRouter>
+  );
 }
 
 export default App;

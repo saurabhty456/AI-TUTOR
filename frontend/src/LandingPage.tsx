@@ -1,29 +1,34 @@
 import Navbar from "./components/Navbar";
 import Hero from "./components/Hero";
+import ValueStrip from "./components/ValueStrip";
 import Features from "./components/Features";
 import HowItWorks from "./components/HowItWorks";
-import LearningPreview from "./components/LearningPreview";
-import InterviewPreview from "./components/InterviewPreview";
+import LearningPaths from "./components/LearningPaths";
+import QuizPreview from "./components/QuizPreview";
+import InterviewPrep from "./components/InterviewPrep";
+import AIInterview from "./components/AIInterview";
 import Badges from "./components/Badges";
 import CTA from "./components/CTA";
 import Footer from "./components/Footer";
-import "./styles/global.css";
+import "./styles/landing.css";
 
 /**
- * Marketing landing page for CodeTutor.
- * This is UI/mockup only — no auth, quiz, or backend logic is wired up here.
- * It does not touch the existing AI chat feature; render it as its own
- * route/page and keep the chat component mounted wherever it lives today.
+ * CodeTutor marketing landing page.
+ * UI only — no auth, quiz, badge, or interview backend logic here.
+ * Does not touch the existing AI chat component.
  */
 export default function LandingPage() {
   return (
-    <div className="ct-landing">
+    <div className="ct-page">
       <Navbar />
       <Hero />
+      <ValueStrip />
       <Features />
       <HowItWorks />
-      <LearningPreview />
-      <InterviewPreview />
+      <LearningPaths />
+      <QuizPreview />
+      <InterviewPrep />
+      <AIInterview />
       <Badges />
       <CTA />
       <Footer />

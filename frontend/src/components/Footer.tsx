@@ -1,46 +1,30 @@
-import "./Footer.css";
-
-const COLUMNS = [
-  {
-    heading: "Product",
-    links: ["Features", "How it works", "Interview prep"],
-  },
-  {
-    heading: "Learn",
-    links: ["Python", "JavaScript", "Java", "DSA"],
-  },
-  {
-    heading: "Company",
-    links: ["About", "Contact"],
-  },
+const LINKS = [
+  { label: "Features", href: "#features" },
+  { label: "Learning Paths", href: "#learning-paths" },
+  { label: "Interview Prep", href: "#interview-prep" },
+  { label: "About", href: "#about" },
+  { label: "Contact", href: "#contact" },
 ];
 
 export default function Footer() {
   return (
-    <footer className="ct-footer" id="about">
+    <footer className="ct-footer">
       <div className="ct-container ct-footer__inner">
         <div className="ct-footer__brand">
-          <a className="ct-nav__brand" href="#top">
-            <span className="ct-nav__brand-mark">&lt;/&gt;</span>
+          <span className="ct-nav__brand">
+            <span className="ct-nav__mark">CT</span>
             CodeTutor
-          </a>
-          <p>Your AI programming tutor — for learning, practicing, and interviewing.</p>
+          </span>
+          <p>Learn. Practice. Master.</p>
         </div>
 
-        <div className="ct-footer__cols">
-          {COLUMNS.map((col) => (
-            <div key={col.heading}>
-              <h4>{col.heading}</h4>
-              <ul>
-                {col.links.map((link) => (
-                  <li key={link}>
-                    <a href="#top">{link}</a>
-                  </li>
-                ))}
-              </ul>
-            </div>
+        <nav className="ct-footer__links" aria-label="Footer">
+          {LINKS.map((link) => (
+            <a key={link.href} href={link.href}>
+              {link.label}
+            </a>
           ))}
-        </div>
+        </nav>
       </div>
 
       <div className="ct-container ct-footer__bottom">

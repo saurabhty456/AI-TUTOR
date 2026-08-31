@@ -1,32 +1,35 @@
 import { useEffect, useState } from "react";
-import "./Navbar.css";
 
 const NAV_LINKS = [
   { label: "Features", href: "#features" },
-  { label: "How it works", href: "#how-it-works" },
-  { label: "Interview prep", href: "#interview-prep" },
-  { label: "About", href: "#about" },
+  { label: "How It Works", href: "#how-it-works" },
+  { label: "Interview Prep", href: "#interview-prep" },
+  { label: "Learning Paths", href: "#learning-paths" },
 ];
 
 export default function Navbar() {
-  const [scrolled, setScrolled] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    return localStorage.getItem("codetutor-theme") === "dark";
+  });
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 12);
-    window.addEventListener("scroll", onScroll);
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+    const theme = darkMode ? "dark" : "light";
+
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("codetutor-theme", theme);
+  }, [darkMode]);
 
   return (
-    <header className={`ct-nav ${scrolled ? "ct-nav--scrolled" : ""}`}>
+    <header className="ct-nav">
       <div className="ct-container ct-nav__inner">
-        <a className="ct-nav__brand" href="#top">
-          <span className="ct-nav__brand-mark">&lt;/&gt;</span>
-          CodeTutor
+        {/* Logo */}
+        <a href="#top" className="ct-brand">
+          <span className="ct-brand__mark">&lt;/&gt;</span>
+          <span className="ct-brand__name">CodeTutor</span>
         </a>
 
-        <nav className="ct-nav__links" aria-label="Primary">
+        {/* Navigation */}
+        <nav className="ct-nav__links">
           {NAV_LINKS.map((link) => (
             <a key={link.href} href={link.href}>
               {link.label}
@@ -34,35 +37,31 @@ export default function Navbar() {
           ))}
         </nav>
 
+        {/* Actions */}
         <div className="ct-nav__actions">
-          <a className="ct-btn ct-btn--primary ct-nav__cta" href="#get-started">
-            Get started
-          </a>
           <button
-            className="ct-nav__menu-btn"
-            aria-label="Toggle navigation menu"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((open) => !open)}
+            type="button"
+            className="ct-theme-toggle"
+            onClick={() => setDarkMode((previous) => !previous)}
+            aria-label={
+              darkMode
+                ? "Switch to light mode"
+                : "Switch to dark mode"
+            }
+            title={
+              darkMode
+                ? "Switch to light mode"
+                : "Switch to dark mode"
+            }
           >
-            <span />
-            <span />
-            <span />
+            {darkMode ? "☀️" : "🌙"}
           </button>
+
+          <a href="/chat" className="ct-btn ct-btn--primary">
+            Get Started
+          </a>
         </div>
       </div>
-
-      {menuOpen && (
-        <div className="ct-nav__mobile">
-          {NAV_LINKS.map((link) => (
-            <a key={link.href} href={link.href} onClick={() => setMenuOpen(false)}>
-              {link.label}
-            </a>
-          ))}
-          <a className="ct-btn ct-btn--primary" href="#get-started" onClick={() => setMenuOpen(false)}>
-            Get started
-          </a>
-        </div>
-      )}
     </header>
   );
 }

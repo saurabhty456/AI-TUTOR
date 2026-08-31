@@ -1,0 +1,224 @@
+.score-page {
+  --sp-bg: #0f1117;
+  --sp-surface: #171a23;
+  --sp-surface-2: #1e222d;
+  --sp-code-bg: #0b0d13;
+  --sp-border: #2a2f3d;
+  --sp-text-primary: #e8eaf0;
+  --sp-text-secondary: #9aa0b4;
+  --sp-accent: #3b82f6;
+  --sp-accent-hover: #2f6fdb;
+  --sp-teal: #2dd4bf;
+  --sp-success: #22c58b;
+  --sp-danger: #f0616b;
+  --sp-font-display: "Sora", "Segoe UI", sans-serif;
+  --sp-font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+
+  min-height: 100vh;
+  background: var(--sp-bg);
+  color: var(--sp-text-primary);
+  font-family: "Inter", "Segoe UI", sans-serif;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 56px 20px 64px;
+}
+
+.score-page * {
+  box-sizing: border-box;
+}
+
+.score-page__empty {
+  text-align: center;
+  max-width: 360px;
+  margin-top: 80px;
+}
+
+.score-page__empty h2 {
+  font-family: var(--sp-font-display);
+  margin: 0 0 10px;
+}
+
+.score-page__empty p {
+  color: var(--sp-text-secondary);
+  margin: 0 0 24px;
+  font-size: 14px;
+}
+
+.score-page__card {
+  width: 100%;
+  max-width: 620px;
+  background: var(--sp-surface);
+  border: 1px solid var(--sp-border);
+  border-radius: 20px;
+  padding: 44px 40px 40px;
+  text-align: center;
+}
+
+.score-page__eyebrow {
+  display: block;
+  font-family: var(--sp-font-mono);
+  font-size: 12.5px;
+  color: var(--sp-teal);
+  margin-bottom: 10px;
+}
+
+.score-page__card h1 {
+  font-family: var(--sp-font-display);
+  font-size: clamp(24px, 3vw, 30px);
+  font-weight: 700;
+  margin: 0 0 10px;
+}
+
+.score-page__difficulty {
+  display: inline-block;
+  font-family: var(--sp-font-mono);
+  font-size: 11.5px;
+  color: var(--sp-text-secondary);
+  border: 1px solid var(--sp-border);
+  border-radius: 999px;
+  padding: 3px 12px;
+  margin-bottom: 30px;
+}
+
+.score-page__ring-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+.score-page__ring {
+  width: 168px;
+  height: 168px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.score-page__ring-inner {
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background: var(--sp-surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.score-page__pct {
+  font-family: var(--sp-font-display);
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.score-page__fraction {
+  font-size: 13px;
+  color: var(--sp-text-secondary);
+  margin-top: 4px;
+}
+
+.score-page__message {
+  font-size: 14.5px;
+  color: var(--sp-text-secondary);
+  max-width: 440px;
+  margin: 0 auto 32px;
+  line-height: 1.6;
+}
+
+.score-page__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--sp-border);
+  border: 1px solid var(--sp-border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 32px;
+}
+
+.score-page__stat {
+  background: var(--sp-surface-2);
+  padding: 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.score-page__stat-value {
+  font-family: var(--sp-font-display);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.score-page__stat-value--correct {
+  color: var(--sp-success);
+}
+
+.score-page__stat-value--incorrect {
+  color: var(--sp-danger);
+}
+
+.score-page__stat-label {
+  font-size: 11px;
+  color: var(--sp-text-secondary);
+}
+
+.score-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.score-page__btn {
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 11px 18px;
+  text-decoration: none;
+  cursor: pointer;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.score-page__btn--primary {
+  background: var(--sp-accent);
+  color: #ffffff;
+}
+
+.score-page__btn--primary:hover {
+  background: var(--sp-accent-hover);
+}
+
+.score-page__btn--secondary {
+  background: var(--sp-surface-2);
+  color: var(--sp-text-primary);
+  border-color: var(--sp-border);
+}
+
+.score-page__btn--secondary:hover {
+  border-color: var(--sp-accent);
+  color: var(--sp-accent);
+}
+
+@media (max-width: 620px) {
+  .score-page__card {
+    padding: 32px 22px 30px;
+  }
+
+  .score-page__stats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .score-page__actions {
+    flex-direction: column;
+  }
+
+  .score-page__btn {
+    width: 100%;
+  }
+}
