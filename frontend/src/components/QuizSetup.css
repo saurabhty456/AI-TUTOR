@@ -1,0 +1,112 @@
+.quiz-setup {
+  display: flex;
+  justify-content: center;
+  padding: 56px 20px 64px;
+}
+
+.quiz-setup__card {
+  width: 100%;
+  max-width: 520px;
+  background: var(--qa-surface);
+  border: 1px solid var(--qa-border);
+  border-radius: 16px;
+  padding: 32px 32px 30px;
+}
+
+.quiz-setup__back {
+  background: none;
+  border: none;
+  color: var(--qa-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 20px;
+}
+
+.quiz-setup__back:hover {
+  color: var(--qa-text-primary);
+}
+
+.quiz-setup__icon {
+  font-size: 28px;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.quiz-setup__card h2 {
+  font-family: var(--qa-font-display);
+  font-size: 21px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: var(--qa-text-primary);
+}
+
+.quiz-setup__desc {
+  font-size: 13.5px;
+  color: var(--qa-text-secondary);
+  margin: 0 0 28px;
+  line-height: 1.5;
+}
+
+.quiz-setup__group {
+  margin-bottom: 24px;
+}
+
+.quiz-setup__label {
+  display: block;
+  font-family: var(--qa-font-mono);
+  font-size: 12px;
+  color: var(--qa-teal);
+  margin-bottom: 10px;
+}
+
+.quiz-setup__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quiz-setup__pill {
+  background: var(--qa-surface-2);
+  border: 1px solid var(--qa-border);
+  color: var(--qa-text-primary);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.quiz-setup__pill:hover {
+  border-color: var(--qa-accent);
+}
+
+.quiz-setup__pill--active {
+  background: var(--qa-accent);
+  border-color: var(--qa-accent);
+  color: #ffffff;
+}
+
+.quiz-setup__start-btn {
+  width: 100%;
+  background: var(--qa-accent);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 13px 0;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.quiz-setup__start-btn:hover {
+  background: var(--qa-accent-hover);
+}
+
+@media (max-width: 480px) {
+  .quiz-setup__card {
+    padding: 26px 22px 24px;
+  }
+}

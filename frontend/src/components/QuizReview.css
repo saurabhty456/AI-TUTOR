@@ -1,0 +1,109 @@
+.quiz-review {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: left;
+  margin-top: 8px;
+}
+
+.quiz-review__item {
+  background: var(--sp-surface-2);
+  border: 1px solid var(--sp-border);
+  border-radius: 12px;
+  padding: 20px 22px;
+}
+
+.quiz-review__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-family: var(--sp-font-mono);
+  font-size: 12px;
+  color: var(--sp-text-secondary);
+}
+
+.quiz-review__badge {
+  font-family: inherit;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.quiz-review__badge--correct {
+  color: var(--sp-success);
+  background: rgba(31, 157, 99, 0.12);
+}
+
+.quiz-review__badge--incorrect {
+  color: var(--sp-danger);
+  background: rgba(209, 66, 75, 0.12);
+}
+
+.quiz-review__question {
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--sp-text-primary);
+  margin: 0 0 14px;
+  line-height: 1.5;
+}
+
+.quiz-review__code {
+  background: var(--sp-code-bg);
+  border: 1px solid var(--sp-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 14px;
+  overflow-x: auto;
+}
+
+.quiz-review__code code {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+  color: #e8eaf0;
+}
+
+.quiz-review__answers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--sp-border);
+}
+
+.quiz-review__label {
+  display: block;
+  font-family: var(--sp-font-mono);
+  font-size: 11px;
+  color: var(--sp-text-secondary);
+  margin-bottom: 6px;
+}
+
+.quiz-review__answer-text {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.quiz-review__answer-text--correct {
+  color: var(--sp-success);
+}
+
+.quiz-review__answer-text--incorrect {
+  color: var(--sp-danger);
+}
+
+.quiz-review__explanation p {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--sp-text-secondary);
+  margin: 0;
+}
+
+@media (max-width: 560px) {
+  .quiz-review__answers {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}

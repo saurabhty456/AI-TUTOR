@@ -1,36 +1,25 @@
-import "./Badges.css";
-
 const BADGES = [
-  { icon: "🐍", label: "Python Basics", state: "earned" as const },
-  { icon: "🧩", label: "OOP Explorer", state: "earned" as const },
-  { icon: "🌳", label: "Tree Traversal", state: "earned" as const },
-  { icon: "⚡", label: "7-Day Streak", state: "earned" as const },
-  { icon: "🎤", label: "Mock Interview I", state: "locked" as const },
-  { icon: "🧠", label: "DSA Level 3", state: "locked" as const },
+  { icon: "🏆", title: "First Steps", desc: "Complete your first quiz." },
+  { icon: "🔥", title: "Consistency", desc: "Maintain a 7-day learning streak." },
+  { icon: "🧠", title: "Algorithm Master", desc: "Complete the algorithms playlist." },
+  { icon: "💻", title: "Python Foundations", desc: "Complete the Python fundamentals path." },
+  { icon: "🎯", title: "Interview Ready", desc: "Complete interview preparation milestones." },
 ];
 
 export default function Badges() {
   return (
-    <section className="ct-section ct-section--tight">
-      <div className="ct-container ct-badges">
-        <div className="ct-section-head">
-          <span className="ct-eyebrow">Milestones</span>
-          <h2 className="ct-h2">Badges that mark real progress</h2>
-          <p className="ct-lede">
-            Every completed playlist, quiz, and streak earns a badge — a visible
-            record of what you've actually learned.
-          </p>
+    <section className="ct-section">
+      <div className="ct-container">
+        <div className="ct-section-head ct-section-head--center">
+          <h2 className="ct-h2">Make progress feel rewarding.</h2>
         </div>
 
         <div className="ct-badges__grid">
           {BADGES.map((b) => (
-            <div
-              key={b.label}
-              className={`ct-badge ${b.state === "locked" ? "ct-badge--locked" : ""}`}
-            >
+            <div className="ct-card ct-badge" key={b.title}>
               <span className="ct-badge__icon">{b.icon}</span>
-              <span className="ct-badge__label">{b.label}</span>
-              {b.state === "locked" && <span className="ct-badge__lock">locked</span>}
+              <h3>{b.title}</h3>
+              <p>{b.desc}</p>
             </div>
           ))}
         </div>

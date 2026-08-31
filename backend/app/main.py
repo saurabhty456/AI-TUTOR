@@ -93,3 +93,4 @@ def chat(request: ChatRequest):
         "message": request.message,
         "answer": response.text
     }
+# @app.get("health")
