@@ -12,6 +12,8 @@ interface QuizSetupProps {
   topic: Topic;
   onStart: (config: QuizConfig) => void;
   onBack: () => void;
+  isLoading?: boolean;
+  errorMessage?: string | null;
 }
 
 const DIFFICULTIES: Difficulty[] = ["Easy", "Medium", "Hard"];
@@ -23,7 +25,13 @@ const TIMER_OPTIONS: { label: string; value: TimerMinutes }[] = [
   { label: "20 minutes", value: 20 },
 ];
 
-function QuizSetup({ topic, onStart, onBack }: QuizSetupProps) {
+function QuizSetup({
+  topic,
+  onStart,
+  onBack,
+  isLoading = false,
+  errorMessage,
+}: QuizSetupProps) {
   const [difficulty, setDifficulty] = useState<Difficulty>("Medium");
   const [questionCount, setQuestionCount] = useState<QuestionCount>(10);
   const [timerMinutes, setTimerMinutes] = useState<TimerMinutes>(0);
@@ -98,12 +106,19 @@ function QuizSetup({ topic, onStart, onBack }: QuizSetupProps) {
           </div>
         </div>
 
+        {errorMessage && (
+          <p className="quiz-setup__error" role="alert">
+            {errorMessage}
+          </p>
+        )}
+
         <button
           type="button"
           className="quiz-setup__start-btn"
           onClick={() => onStart({ difficulty, questionCount, timerMinutes })}
+          disabled={isLoading}
         >
-          Start Quiz
+          {isLoading ? "Generating Quiz..." : "Start Quiz"}
         </button>
       </div>
     </div>

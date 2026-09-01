@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   TOPICS,
   formatTime,
-  generateQuizQuestions,
   getTopicById,
   type Difficulty,
   type QuizConfig,
@@ -16,7 +15,7 @@ import QuizSetup from "./QuizSetup";
 import QuizQuestion from "./QuizQuestion";
 import "./QuizPage.css";
 
-type Phase = "topics" | "setup" | "quiz";
+type Phase = "topics" | "setup" | "loading" | "quiz";
 
 interface RetakeState {
   retakeConfig: {
@@ -25,6 +24,70 @@ interface RetakeState {
     questionCount: number;
     timerMinutes: number;
   };
+}
+
+interface ApiQuizQuestion {
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+}
+
+function normalizeDifficulty(value: string): Difficulty {
+  const normalized = value.toLowerCase();
+  if (normalized === "easy") return "Easy";
+  if (normalized === "hard") return "Hard";
+  return "Medium";
+}
+
+function parseQuestionContent(rawQuestion: string) {
+  const match = rawQuestion.match(/```(?:\w+)?\s*\n([\s\S]*?)```/);
+
+  if (!match) {
+    return {
+      question: rawQuestion.trim(),
+      codeSnippet: undefined as string | undefined,
+    };
+  }
+
+  const codeSnippet = match[1].trim();
+  const before = rawQuestion.slice(0, match.index ?? 0).replace(/\n{3,}/g, "\n\n").trim();
+  const after = rawQuestion
+    .slice((match.index ?? 0) + match[0].length)
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  const question = [before, after].filter(Boolean).join("\n\n").trim();
+
+  return {
+    question: question || "Explain the following code.",
+    codeSnippet: codeSnippet || undefined,
+  };
+}
+
+function mapApiQuestions(
+  questions: ApiQuizQuestion[],
+  difficulty: Difficulty,
+  topicId: string
+): QuizQuestionData[] {
+  return questions.map((question, index) => {
+    const { question: cleanedQuestion, codeSnippet } = parseQuestionContent(
+      question.question
+    );
+
+    return {
+      id: `${topicId}-${difficulty.toLowerCase()}-${index}-${cleanedQuestion
+        .slice(0, 24)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")}`,
+      question: cleanedQuestion,
+      codeSnippet,
+      options: question.options,
+      correctIndex: question.correctIndex,
+      explanation: question.explanation,
+      difficulty,
+    };
+  });
 }
 
 function QuizPage() {
@@ -38,6 +101,8 @@ function QuizPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [userAnswers, setUserAnswers] = useState<(number | null)[]>([]);
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
 
   const quizStartRef = useRef<number>(Date.now());
   const hasHandledRetake = useRef(false);
@@ -80,22 +145,91 @@ function QuizPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, timeRemaining]);
 
-  function beginQuiz(topic: Topic, quizConfig: QuizConfig) {
-    const generated = generateQuizQuestions(
-      topic,
-      quizConfig.difficulty,
-      quizConfig.questionCount
-    );
+  async function beginQuiz(topic: Topic, quizConfig: QuizConfig) {
+    if (isGenerating) return;
+
+    setGenerationError(null);
     setSelectedTopic(topic);
     setConfig(quizConfig);
-    setQuestions(generated);
-    setUserAnswers(new Array(generated.length).fill(null));
     setCurrentIndex(0);
+    setQuestions([]);
+    setUserAnswers([]);
     setTimeRemaining(
       quizConfig.timerMinutes > 0 ? quizConfig.timerMinutes * 60 : null
     );
-    quizStartRef.current = Date.now();
-    setPhase("quiz");
+    setPhase("loading");
+    setIsGenerating(true);
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/quiz/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          topic: topic.name,
+          difficulty: quizConfig.difficulty.toLowerCase(),
+          number_of_questions: quizConfig.questionCount,
+        }),
+      });
+
+      if (!response.ok) {
+        let message = "We couldn’t generate the quiz right now. Please try again.";
+
+        try {
+          const payload = await response.json();
+          if (typeof payload?.detail === "string" && payload.detail.trim()) {
+            message = payload.detail;
+          }
+        } catch {
+          // Ignore malformed error payloads and fall back to the generic message.
+        }
+
+        throw new Error(message);
+      }
+
+      const data = (await response.json()) as {
+        topic?: string;
+        difficulty?: string;
+        number_of_questions?: number;
+        questions?: ApiQuizQuestion[];
+      };
+
+      const generatedQuestions = mapApiQuestions(
+        data.questions ?? [],
+        normalizeDifficulty(data.difficulty ?? quizConfig.difficulty),
+        topic.id
+      );
+
+      if (generatedQuestions.length === 0) {
+        throw new Error("The quiz generator returned no questions. Please try again.");
+      }
+
+      setQuestions(generatedQuestions);
+      setUserAnswers(new Array(generatedQuestions.length).fill(null));
+      setCurrentIndex(0);
+      setTimeRemaining(
+        quizConfig.timerMinutes > 0 ? quizConfig.timerMinutes * 60 : null
+      );
+      quizStartRef.current = Date.now();
+      setPhase("quiz");
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : "We couldn’t generate the quiz right now. Please try again.";
+
+      setGenerationError(message);
+      setSelectedTopic(topic);
+      setConfig(null);
+      setQuestions([]);
+      setUserAnswers([]);
+      setCurrentIndex(0);
+      setTimeRemaining(null);
+      setPhase("setup");
+    } finally {
+      setIsGenerating(false);
+    }
   }
 
   function handleSelectTopic(topic: Topic) {
@@ -136,12 +270,14 @@ function QuizPage() {
       "Are you sure you want to exit? Your progress will be lost."
     );
     if (confirmed) {
+      setGenerationError(null);
       setPhase("topics");
       setSelectedTopic(null);
       setConfig(null);
       setQuestions([]);
       setUserAnswers([]);
       setTimeRemaining(null);
+      setIsGenerating(false);
     }
   }
 
@@ -188,7 +324,25 @@ function QuizPage() {
           topic={selectedTopic}
           onStart={(cfg) => beginQuiz(selectedTopic, cfg)}
           onBack={handleBackToTopics}
+          isLoading={isGenerating}
+          errorMessage={generationError}
         />
+      </div>
+    );
+  }
+
+  if (phase === "loading" && selectedTopic) {
+    return (
+      <div className="quiz-app">
+        <div className="quiz-loading" aria-live="polite">
+          <div className="quiz-loading__card">
+            <div className="quiz-loading__spinner" aria-hidden="true" />
+            <h2>Generating your quiz...</h2>
+            <p>
+              We’re creating a personalized {selectedTopic.name} quiz for you.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
