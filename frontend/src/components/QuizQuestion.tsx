@@ -11,6 +11,39 @@ interface QuizQuestionProps {
 
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
 
+function renderQuestionText(text: string) {
+  const codeBlockPattern = /```(?:\w+)?\s*\n?([\s\S]*?)```/g;
+  const parts: Array<React.ReactNode> = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = codeBlockPattern.exec(text)) !== null) {
+    const before = text.slice(lastIndex, match.index).trim();
+
+    if (before) {
+      parts.push(<p key={`text-${lastIndex}`}>{before}</p>);
+    }
+
+    const code = match[1].trim();
+    if (code) {
+      parts.push(
+        <pre key={`code-${match.index}`} className="quiz-question__code">
+          <code>{code}</code>
+        </pre>
+      );
+    }
+
+    lastIndex = (match.index ?? 0) + match[0].length;
+  }
+
+  const remaining = text.slice(lastIndex).trim();
+  if (remaining) {
+    parts.push(<p key="remaining-text">{remaining}</p>);
+  }
+
+  return parts.length > 0 ? <>{parts}</> : <>{text}</>;
+}
+
 function QuizQuestion({
   question,
   questionNumber,
@@ -34,9 +67,9 @@ function QuizQuestion({
         Question {questionNumber} of {totalQuestions}
       </span>
 
-      <h2 className="quiz-question__text">{question.question}</h2>
+      <h2 className="quiz-question__text">{renderQuestionText(question.question)}</h2>
 
-      {question.codeSnippet && (
+      {!question.question.includes("```") && question.codeSnippet && (
         <pre className="quiz-question__code">
           <code>{question.codeSnippet}</code>
         </pre>

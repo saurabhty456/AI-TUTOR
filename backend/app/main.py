@@ -291,27 +291,16 @@ def generate_quiz(request: QuizRequest):
     # -----------------------------------------------------
 
     prompt = f"""
-Topic: {topic}
-Difficulty: {difficulty}
-Number of questions: {number_of_questions}
+Generate exactly {number_of_questions} concise beginner-friendly multiple-choice questions on {topic} at {difficulty} difficulty.
 
-Generate exactly {number_of_questions} unique, beginner-friendly multiple-choice questions.
-Keep them focused on the requested topic and difficulty.
-Use concise, readable wording and professional educational phrasing.
-If code is needed, put code inside a fenced Markdown code block in the question string like:
-"question": "What is the output of the following Python code?\n\n```python\nprint(\"Hello\")\n```"
-Return ONLY valid JSON in this exact structure with no markdown fences around the JSON and no extra text:
-
-{{
-  "questions": [
-    {{
-      "question": "Question text",
-      "options": ["Option A", "Option B", "Option C", "Option D"],
-      "correctIndex": 1,
-      "explanation": "Short explanation of why the answer is correct."
-    }}
-  ]
-}}
+Rules:
+- Exactly {number_of_questions} questions
+- Each question must have exactly 4 options
+- correctIndex must be 0, 1, 2, or 3
+- Keep wording brief and clear
+- Keep each explanation to 1-2 short sentences
+- If code is needed, use a fenced Markdown code block in the question string
+- Return valid JSON only matching the schema
 """
 
     # -----------------------------------------------------
@@ -326,8 +315,11 @@ Return ONLY valid JSON in this exact structure with no markdown fences around th
                 system_instruction=QUIZ_INSTRUCTIONS,
                 response_mime_type="application/json",
                 response_schema=QuizResponse,
+                thinking_config=types.ThinkingConfig(
+                    thinking_level="MINIMAL"
+                ),
                 temperature=0.2,
-                max_output_tokens=6000,
+                max_output_tokens=5000,
             ),
         )
 
