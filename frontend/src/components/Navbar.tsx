@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 const NAV_LINKS = [
   { label: "Features", href: "#features" },
@@ -8,6 +10,8 @@ const NAV_LINKS = [
 ];
 
 export default function Navbar() {
+  const { currentUser, isAuthenticated, logout } = useAuth();
+  const [profileOpen, setProfileOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem("codetutor-theme") === "dark";
   });
@@ -57,9 +61,39 @@ export default function Navbar() {
             {darkMode ? "☀️" : "🌙"}
           </button>
 
-          <a href="/chat" className="ct-btn ct-btn--primary">
-            Get Started
-          </a>
+          {isAuthenticated ? (
+            <div className="ct-profile">
+              <button
+                type="button"
+                className="ct-profile__button"
+                onClick={() => setProfileOpen((open) => !open)}
+                aria-expanded={profileOpen}
+                aria-haspopup="menu"
+              >
+                <span className="ct-profile__avatar">
+                  {currentUser?.name.charAt(0).toUpperCase()}
+                </span>
+                <span>{currentUser?.name.split(" ")[0]}</span>
+                <span aria-hidden="true">⌄</span>
+              </button>
+                <div className="ct-nav__auth-links">
+                  <Link to="/dashboard">Dashboard</Link>
+                  <Link to="/quiz">Quiz</Link>
+                  <Link to="/chat">Chat</Link>
+                </div>
+              {profileOpen && (
+                <div className="ct-profile__menu" role="menu">
+                  <Link to="/dashboard" role="menuitem">Dashboard</Link>
+                  <button type="button" onClick={logout} role="menuitem">Log out</button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <Link to="/login" className="ct-nav__login">Login</Link>
+              <Link to="/signup" className="ct-btn ct-btn--primary">Get Started</Link>
+            </>
+          )}
         </div>
       </div>
     </header>

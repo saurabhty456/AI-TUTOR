@@ -1,9 +1,17 @@
 import os
 import json
 import re
+import base64
+import hashlib
+import hmac
+import secrets
+import sqlite3
+import time
+from datetime import datetime, timezone
+from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from google import genai
@@ -59,6 +67,196 @@ app.add_middleware(
 client = genai.Client(
     api_key=GEMINI_API_KEY
 )
+
+
+# =========================================================
+# AUTHENTICATION
+# =========================================================
+
+DATABASE_PATH = Path(
+    os.getenv(
+        "CODETUTOR_DATABASE_PATH",
+        str(Path(__file__).resolve().parent.parent / "codetutor.db"),
+    )
+)
+JWT_SECRET = os.getenv("JWT_SECRET")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRES_IN_SECONDS = 60 * 60 * 24 * 7
+
+
+def get_db_connection() -> sqlite3.Connection:
+    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(DATABASE_PATH)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def initialize_database() -> None:
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
+
+initialize_database()
+
+
+class AuthSignupRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+
+class AuthLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class AuthUser(BaseModel):
+    id: int
+    name: str
+    email: str
+    created_at: str
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: AuthUser
+
+
+def normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    derived_key = hashlib.scrypt(
+        password.encode("utf-8"),
+        salt=salt,
+        n=2**14,
+        r=8,
+        p=1,
+    )
+    return "scrypt${}${}".format(
+        base64.urlsafe_b64encode(salt).decode("ascii"),
+        base64.urlsafe_b64encode(derived_key).decode("ascii"),
+    )
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        algorithm, encoded_salt, encoded_key = stored_hash.split("$", 2)
+        if algorithm != "scrypt":
+            return False
+        salt = base64.urlsafe_b64decode(encoded_salt.encode("ascii"))
+        expected_key = base64.urlsafe_b64decode(encoded_key.encode("ascii"))
+        actual_key = hashlib.scrypt(
+            password.encode("utf-8"),
+            salt=salt,
+            n=2**14,
+            r=8,
+            p=1,
+        )
+        return hmac.compare_digest(actual_key, expected_key)
+    except (ValueError, TypeError):
+        return False
+
+
+def encode_jwt(user_id: int) -> str:
+    if not JWT_SECRET:
+        raise HTTPException(
+            status_code=500,
+            detail="Authentication is not configured on the server.",
+        )
+
+    header = {"alg": JWT_ALGORITHM, "typ": "JWT"}
+    payload = {
+        "sub": str(user_id),
+        "exp": int(time.time()) + JWT_EXPIRES_IN_SECONDS,
+    }
+
+    def encode_part(value: dict) -> str:
+        return base64.urlsafe_b64encode(
+            json.dumps(value, separators=(",", ":")).encode("utf-8")
+        ).rstrip(b"=").decode("ascii")
+
+    encoded_header = encode_part(header)
+    encoded_payload = encode_part(payload)
+    unsigned_token = f"{encoded_header}.{encoded_payload}"
+    signature = hmac.new(
+        JWT_SECRET.encode("utf-8"),
+        unsigned_token.encode("ascii"),
+        hashlib.sha256,
+    ).digest()
+    encoded_signature = base64.urlsafe_b64encode(signature).rstrip(b"=").decode(
+        "ascii"
+    )
+    return f"{unsigned_token}.{encoded_signature}"
+
+
+def decode_jwt(token: str) -> int:
+    if not JWT_SECRET:
+        raise HTTPException(
+            status_code=500,
+            detail="Authentication is not configured on the server.",
+        )
+
+    try:
+        encoded_header, encoded_payload, encoded_signature = token.split(".")
+        unsigned_token = f"{encoded_header}.{encoded_payload}"
+        expected_signature = hmac.new(
+            JWT_SECRET.encode("utf-8"),
+            unsigned_token.encode("ascii"),
+            hashlib.sha256,
+        ).digest()
+        actual_signature = base64.urlsafe_b64decode(
+            encoded_signature + "=" * (-len(encoded_signature) % 4)
+        )
+
+        if not hmac.compare_digest(actual_signature, expected_signature):
+            raise ValueError("Invalid signature")
+
+        payload = json.loads(
+            base64.urlsafe_b64decode(
+                encoded_payload + "=" * (-len(encoded_payload) % 4)
+            )
+        )
+        if int(payload["exp"]) <= int(time.time()):
+            raise ValueError("Expired token")
+        return int(payload["sub"])
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+        raise HTTPException(
+            status_code=401,
+            detail="Your session has expired. Please log in again.",
+        )
+
+
+def current_user(authorization: str | None = Header(default=None)) -> AuthUser:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication is required.",
+        )
+
+    user_id = decode_jwt(authorization[7:])
+    with get_db_connection() as connection:
+        row = connection.execute(
+            "SELECT id, name, email, created_at FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=401, detail="User account not found.")
+    return AuthUser(**dict(row))
 
 
 # =========================================================
@@ -169,6 +367,85 @@ def home():
     return {
         "message": "CodeTutor API is running!"
     }
+
+
+# =========================================================
+# AUTH ROUTES
+# =========================================================
+
+@app.post("/auth/signup", response_model=AuthResponse)
+def signup(request: AuthSignupRequest):
+    name = request.name.strip()
+    email = normalize_email(request.email)
+
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required.")
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(status_code=400, detail="Enter a valid email address.")
+    if len(request.password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 8 characters long.",
+        )
+
+    created_at = datetime.now(timezone.utc).isoformat()
+    try:
+        with get_db_connection() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO users (name, email, password_hash, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (name, email, hash_password(request.password), created_at),
+            )
+            user_id = cursor.lastrowid
+    except sqlite3.IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail="An account with this email already exists.",
+        )
+
+    user = AuthUser(
+        id=user_id,
+        name=name,
+        email=email,
+        created_at=created_at,
+    )
+    return AuthResponse(
+        access_token=encode_jwt(user.id),
+        token_type="bearer",
+        user=user,
+    )
+
+
+@app.post("/auth/login", response_model=AuthResponse)
+def login(request: AuthLoginRequest):
+    email = normalize_email(request.email)
+    with get_db_connection() as connection:
+        row = connection.execute(
+            "SELECT * FROM users WHERE email = ?",
+            (email,),
+        ).fetchone()
+
+    if row is None or not verify_password(request.password, row["password_hash"]):
+        raise HTTPException(status_code=401, detail="Incorrect email or password.")
+
+    user = AuthUser(
+        id=row["id"],
+        name=row["name"],
+        email=row["email"],
+        created_at=row["created_at"],
+    )
+    return AuthResponse(
+        access_token=encode_jwt(user.id),
+        token_type="bearer",
+        user=user,
+    )
+
+
+@app.get("/auth/me", response_model=AuthUser)
+def me(user: AuthUser = Depends(current_user)):
+    return user
 
 
 # =========================================================

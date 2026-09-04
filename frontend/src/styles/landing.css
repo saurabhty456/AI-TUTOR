@@ -291,6 +291,106 @@ body {
   gap: 14px;
 }
 
+.ct-nav__login {
+  color: var(--ct-text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.ct-nav__login:hover {
+  color: var(--ct-text-primary);
+}
+
+.ct-profile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.ct-nav__auth-links {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.ct-nav__auth-links a {
+  color: var(--ct-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.ct-nav__auth-links a:hover {
+  color: var(--ct-text-primary);
+}
+
+.ct-profile__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--ct-border);
+  border-radius: 999px;
+  padding: 5px 10px 5px 5px;
+  background: var(--ct-surface);
+  color: var(--ct-text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ct-profile__button:hover,
+.ct-profile__button:focus-visible {
+  border-color: var(--ct-accent);
+  outline: none;
+}
+
+.ct-profile__avatar {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ct-accent);
+  color: #fff;
+  font-size: 12px;
+}
+
+.ct-profile__menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  display: grid;
+  min-width: 150px;
+  padding: 6px;
+  border: 1px solid var(--ct-border);
+  border-radius: 10px;
+  background: var(--ct-surface);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .18);
+}
+
+.ct-profile__menu a,
+.ct-profile__menu button {
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ct-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  text-decoration: none;
+}
+
+.ct-profile__menu a:hover,
+.ct-profile__menu button:hover {
+  background: var(--ct-accent-soft);
+  color: var(--ct-text-primary);
+}
+
 .ct-nav__toggle {
   display: none;
   flex-direction: column;
@@ -317,6 +417,7 @@ body {
 
 @media (max-width: 860px) {
   .ct-nav__links,
+  .ct-nav__auth-links { display: none; }
   .ct-nav__cta {
     display: none;
   }
