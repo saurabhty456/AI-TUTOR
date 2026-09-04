@@ -291,24 +291,21 @@ def generate_quiz(request: QuizRequest):
     # -----------------------------------------------------
 
     prompt = f"""
-Generate exactly {number_of_questions} concise beginner-friendly multiple-choice questions on {topic} at {difficulty} difficulty.
-
-Rules:
-- Exactly {number_of_questions} questions
-- Each question must have exactly 4 options
-- correctIndex must be 0, 1, 2, or 3
-- Keep wording brief and clear
-- Keep each explanation to 1-2 short sentences
-- If code is needed, use a fenced Markdown code block in the question string
-- Return valid JSON only matching the schema
+Generate exactly {number_of_questions} concise multiple-choice questions on {topic} at {difficulty} difficulty.
+Every question must have exactly 4 non-empty, distinct options, one correctIndex (0-3), and a short 1-2 sentence explanation.
+If code is included, use a fenced Markdown code block in the question string.
+Return only valid JSON matching the schema: exactly {number_of_questions} questions and no extra fields.
 """
 
     # -----------------------------------------------------
     # Call Gemini using structured JSON output
     # -----------------------------------------------------
 
-    try:
-        response = client.models.generate_content(
+    class InvalidQuizContent(Exception):
+        pass
+
+    def generate_response():
+        return client.models.generate_content(
             model="gemini-3.6-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
@@ -323,125 +320,121 @@ Rules:
             ),
         )
 
-        if response.parsed is not None:
-            quiz_data = QuizResponse.model_validate(response.parsed)
-        else:
-            raw_text = (response.text or "").strip()
+    def validate_response(response):
+        try:
+            if response.parsed is not None:
+                quiz_data = QuizResponse.model_validate(response.parsed)
+            else:
+                raw_text = (response.text or "").strip()
 
-            if not raw_text:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Gemini returned an empty quiz."
+                if not raw_text:
+                    raise InvalidQuizContent("Gemini returned an empty quiz.")
+
+                cleaned_text = raw_text
+                if cleaned_text.startswith("```"):
+                    cleaned_text = re.sub(
+                        r"^```(?:json)?\s*",
+                        "",
+                        cleaned_text,
+                        flags=re.IGNORECASE,
+                    )
+                    cleaned_text = re.sub(
+                        r"\s*```$",
+                        "",
+                        cleaned_text,
+                        flags=re.IGNORECASE | re.DOTALL,
+                    ).strip()
+
+                if not cleaned_text.startswith("{"):
+                    match = re.search(
+                        r"\{.*\}",
+                        cleaned_text,
+                        flags=re.DOTALL,
+                    )
+                    if match:
+                        cleaned_text = match.group(0)
+
+                quiz_data = QuizResponse.model_validate(
+                    json.loads(cleaned_text)
                 )
 
-            cleaned_text = raw_text
-            if cleaned_text.startswith("```"):
-                cleaned_text = re.sub(
-                    r"^```(?:json)?\s*",
-                    "",
-                    cleaned_text,
-                    flags=re.IGNORECASE,
+            if len(quiz_data.questions) != number_of_questions:
+                raise InvalidQuizContent(
+                    f"Gemini returned {len(quiz_data.questions)} questions "
+                    f"instead of {number_of_questions}."
                 )
-                cleaned_text = re.sub(
-                    r"\s*```$",
-                    "",
-                    cleaned_text,
-                    flags=re.IGNORECASE | re.DOTALL,
-                ).strip()
 
-            if not cleaned_text.startswith("{"):
-                match = re.search(r"\{.*\}", cleaned_text, flags=re.DOTALL)
-                if match:
-                    cleaned_text = match.group(0)
+            validated_questions = []
+
+            for index, question in enumerate(quiz_data.questions):
+                if not question.question.strip():
+                    raise InvalidQuizContent(
+                        f"Question {index + 1} is missing question text."
+                    )
+
+                if len(question.options) != 4:
+                    raise InvalidQuizContent(
+                        f"Question {index + 1} must have exactly 4 options."
+                    )
+
+                cleaned_options = []
+                for option in question.options:
+                    if not option.strip():
+                        raise InvalidQuizContent(
+                            f"Question {index + 1} contains an invalid option."
+                        )
+                    cleaned_options.append(option.strip())
+
+                if len(
+                    set(option.lower() for option in cleaned_options)
+                ) != 4:
+                    raise InvalidQuizContent(
+                        f"Question {index + 1} contains duplicate options."
+                    )
+
+                if question.correctIndex not in [0, 1, 2, 3]:
+                    raise InvalidQuizContent(
+                        f"Question {index + 1} has an invalid correctIndex."
+                    )
+
+                if not question.explanation.strip():
+                    raise InvalidQuizContent(
+                        f"Question {index + 1} is missing an explanation."
+                    )
+
+                validated_questions.append(
+                    {
+                        "question": question.question.strip(),
+                        "options": cleaned_options,
+                        "correctIndex": question.correctIndex,
+                        "explanation": question.explanation.strip(),
+                    }
+                )
+
+            return validated_questions
+        except InvalidQuizContent:
+            raise
+        except Exception as error:
+            raise InvalidQuizContent(str(error)) from error
+
+    try:
+        response = generate_response()
+
+        try:
+            validated_questions = validate_response(response)
+        except InvalidQuizContent as error:
+            print("Quiz validation failed. Regenerating once without delay.")
+            print("Quiz validation error:", error)
+            response = generate_response()
 
             try:
-                quiz_data = QuizResponse.model_validate(json.loads(cleaned_text))
-            except (TypeError, ValueError, json.JSONDecodeError) as error:
-                print("Invalid Gemini JSON:", error)
-                print("Gemini response:", raw_text)
+                validated_questions = validate_response(response)
+            except InvalidQuizContent as second_error:
+                print("Quiz validation error:", second_error)
                 raise HTTPException(
                     status_code=500,
-                    detail="Gemini returned invalid quiz data."
-                )
-
-        if len(quiz_data.questions) != number_of_questions:
-            raise HTTPException(
-                status_code=500,
-                detail=(
-                    "Gemini returned "
-                    f"{len(quiz_data.questions)} questions instead of "
-                    f"{number_of_questions}."
-                )
-            )
-
-        validated_questions = []
-
-        for index, question in enumerate(quiz_data.questions):
-            if not question.question.strip():
-                raise HTTPException(
-                    status_code=500,
-                    detail=(
-                        f"Question {index + 1} "
-                        "is missing question text."
-                    )
-                )
-
-            if len(question.options) != 4:
-                raise HTTPException(
-                    status_code=500,
-                    detail=(
-                        f"Question {index + 1} "
-                        "must have exactly 4 options."
-                    )
-                )
-
-            cleaned_options = []
-            for option in question.options:
-                if not option.strip():
-                    raise HTTPException(
-                        status_code=500,
-                        detail=(
-                            f"Question {index + 1} "
-                            "contains an invalid option."
-                        )
-                    )
-                cleaned_options.append(option.strip())
-
-            if len(set(option.lower() for option in cleaned_options)) != 4:
-                raise HTTPException(
-                    status_code=500,
-                    detail=(
-                        f"Question {index + 1} "
-                        "contains duplicate options."
-                    )
-                )
-
-            if question.correctIndex not in [0, 1, 2, 3]:
-                raise HTTPException(
-                    status_code=500,
-                    detail=(
-                        f"Question {index + 1} "
-                        "has an invalid correctIndex."
-                    )
-                )
-
-            if not question.explanation.strip():
-                raise HTTPException(
-                    status_code=500,
-                    detail=(
-                        f"Question {index + 1} "
-                        "is missing an explanation."
-                    )
-                )
-
-            validated_questions.append(
-                {
-                    "question": question.question.strip(),
-                    "options": cleaned_options,
-                    "correctIndex": question.correctIndex,
-                    "explanation": question.explanation.strip(),
-                }
-            )
+                    detail="Unable to generate a valid quiz right now."
+                ) from second_error
 
         return {
             "topic": topic,

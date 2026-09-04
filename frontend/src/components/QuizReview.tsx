@@ -1,4 +1,5 @@
 import type { QuizQuestionData } from "../data/quizData";
+import ReactMarkdown from "react-markdown";
 import "./QuizReview.css";
 
 interface QuizReviewProps {
@@ -12,6 +13,7 @@ function QuizReview({ questions, userAnswers }: QuizReviewProps) {
       {questions.map((q, index) => {
         const userIndex = userAnswers[index];
         const isCorrect = userIndex === q.correctIndex;
+        const isUnanswered = userIndex === null;
 
         return (
           <div className="quiz-review__item" key={`${q.id}-${index}`}>
@@ -21,16 +23,28 @@ function QuizReview({ questions, userAnswers }: QuizReviewProps) {
                 className={
                   isCorrect
                     ? "quiz-review__badge quiz-review__badge--correct"
-                    : "quiz-review__badge quiz-review__badge--incorrect"
+                    : isUnanswered
+                      ? "quiz-review__badge quiz-review__badge--unanswered"
+                      : "quiz-review__badge quiz-review__badge--incorrect"
                 }
               >
-                {isCorrect ? "✓ Correct" : "✗ Incorrect"}
+                {isCorrect ? "✓ Correct" : isUnanswered ? "— Unanswered" : "✗ Incorrect"}
               </span>
             </div>
 
-            <p className="quiz-review__question">{q.question}</p>
+            <div className="quiz-review__question">
+              <ReactMarkdown
+                components={{
+                  pre: ({ children }) => (
+                    <pre className="quiz-review__code">{children}</pre>
+                  ),
+                }}
+              >
+                {q.question}
+              </ReactMarkdown>
+            </div>
 
-            {q.codeSnippet && (
+            {q.codeSnippet && !q.question.includes("```") && (
               <pre className="quiz-review__code">
                 <code>{q.codeSnippet}</code>
               </pre>
@@ -41,7 +55,9 @@ function QuizReview({ questions, userAnswers }: QuizReviewProps) {
                 <span className="quiz-review__label">Your answer</span>
                 <p
                   className={
-                    isCorrect
+                    isUnanswered
+                      ? "quiz-review__answer-text quiz-review__answer-text--unanswered"
+                      : isCorrect
                       ? "quiz-review__answer-text quiz-review__answer-text--correct"
                       : "quiz-review__answer-text quiz-review__answer-text--incorrect"
                   }

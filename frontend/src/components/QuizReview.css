@@ -46,6 +46,15 @@
   color: var(--sp-text-primary);
   margin: 0 0 14px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.quiz-review__question p {
+  margin: 0 0 12px;
+}
+
+.quiz-review__question p:last-child {
+  margin-bottom: 0;
 }
 
 .quiz-review__code {
@@ -55,6 +64,8 @@
   padding: 12px 14px;
   margin: 0 0 14px;
   overflow-x: auto;
+  white-space: pre;
+  max-width: 100%;
 }
 
 .quiz-review__code code {
@@ -92,6 +103,11 @@
 
 .quiz-review__answer-text--incorrect {
   color: var(--sp-danger);
+}
+
+.quiz-review__badge--unanswered,
+.quiz-review__answer-text--unanswered {
+  color: var(--sp-text-secondary);
 }
 
 .quiz-review__explanation p {

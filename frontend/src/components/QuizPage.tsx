@@ -40,40 +40,13 @@ function normalizeDifficulty(value: string): Difficulty {
   return "Medium";
 }
 
-function parseQuestionContent(rawQuestion: string) {
-  const match = rawQuestion.match(/```(?:\w+)?\s*\n([\s\S]*?)```/);
-
-  if (!match) {
-    return {
-      question: rawQuestion.trim(),
-      codeSnippet: undefined as string | undefined,
-    };
-  }
-
-  const codeSnippet = match[1].trim();
-  const before = rawQuestion.slice(0, match.index ?? 0).replace(/\n{3,}/g, "\n\n").trim();
-  const after = rawQuestion
-    .slice((match.index ?? 0) + match[0].length)
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
-  const question = [before, after].filter(Boolean).join("\n\n").trim();
-
-  return {
-    question: question || "Explain the following code.",
-    codeSnippet: codeSnippet || undefined,
-  };
-}
-
 function mapApiQuestions(
   questions: ApiQuizQuestion[],
   difficulty: Difficulty,
   topicId: string
 ): QuizQuestionData[] {
   return questions.map((question, index) => {
-    const { question: cleanedQuestion, codeSnippet } = parseQuestionContent(
-      question.question
-    );
+    const cleanedQuestion = question.question.trim();
 
     return {
       id: `${topicId}-${difficulty.toLowerCase()}-${index}-${cleanedQuestion
@@ -81,7 +54,6 @@ function mapApiQuestions(
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")}`,
       question: cleanedQuestion,
-      codeSnippet,
       options: question.options,
       correctIndex: question.correctIndex,
       explanation: question.explanation,
@@ -103,6 +75,7 @@ function QuizPage() {
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
 
   const quizStartRef = useRef<number>(Date.now());
   const hasHandledRetake = useRef(false);
@@ -257,7 +230,7 @@ function QuizPage() {
     if (currentIndex < questions.length - 1) {
       setCurrentIndex((i) => i + 1);
     } else {
-      finishQuiz();
+      setSubmitDialogOpen(true);
     }
   }
 
@@ -278,6 +251,7 @@ function QuizPage() {
       setUserAnswers([]);
       setTimeRemaining(null);
       setIsGenerating(false);
+      setSubmitDialogOpen(false);
     }
   }
 
@@ -287,6 +261,8 @@ function QuizPage() {
     const score = userAnswers.reduce<number>((total, answer, i) => {
       return answer === questions[i]?.correctIndex ? total + 1 : total;
     }, 0);
+    const unanswered = userAnswers.filter((answer) => answer === null).length;
+    const percentage = Math.round((score / questions.length) * 100);
 
     const timeTakenSeconds =
       config.timerMinutes > 0
@@ -302,6 +278,8 @@ function QuizPage() {
       userAnswers,
       score,
       total: questions.length,
+      percentage,
+      unanswered,
       timeTakenSeconds,
       completedAt: new Date().toISOString(),
     };
@@ -434,10 +412,9 @@ function QuizPage() {
                 type="button"
                 className="quiz-runner__nav-btn quiz-runner__nav-btn--primary"
                 onClick={handleNext}
-                disabled={userAnswers[currentIndex] === null}
               >
                 {currentIndex === questions.length - 1
-                  ? "Finish Quiz"
+                  ? "Submit Quiz"
                   : "Next Question →"}
               </button>
             </div>
@@ -469,6 +446,46 @@ function QuizPage() {
             </div>
           </aside>
         </div>
+
+        {submitDialogOpen && (
+          <div className="quiz-submit-dialog" role="presentation">
+            <div
+              className="quiz-submit-dialog__backdrop"
+              onClick={() => setSubmitDialogOpen(false)}
+            />
+            <section
+              className="quiz-submit-dialog__content"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="quiz-submit-title"
+            >
+              <h2 id="quiz-submit-title">Submit your quiz?</h2>
+              <p className="quiz-submit-dialog__summary">
+                You have answered {userAnswers.filter((answer) => answer !== null).length} of {questions.length} questions.
+              </p>
+              <div className="quiz-submit-dialog__counts">
+                <span>Answered <strong>{userAnswers.filter((answer) => answer !== null).length}</strong></span>
+                <span>Unanswered <strong>{userAnswers.filter((answer) => answer === null).length}</strong></span>
+              </div>
+              <div className="quiz-submit-dialog__actions">
+                <button
+                  type="button"
+                  className="quiz-runner__nav-btn"
+                  onClick={() => setSubmitDialogOpen(false)}
+                >
+                  Continue Quiz
+                </button>
+                <button
+                  type="button"
+                  className="quiz-runner__nav-btn quiz-runner__nav-btn--primary"
+                  onClick={finishQuiz}
+                >
+                  Submit Quiz
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -15,7 +15,12 @@ function ScorePage() {
 
   const result = location.state as QuizResult | null;
 
-  if (!result) {
+  if (
+    !result ||
+    !Array.isArray(result.questions) ||
+    !Array.isArray(result.userAnswers) ||
+    result.questions.length !== result.userAnswers.length
+  ) {
     return (
       <div className="score-page">
         <div className="score-page__empty">
@@ -29,9 +34,14 @@ function ScorePage() {
     );
   }
 
-  const percentage =
-    result.total === 0 ? 0 : Math.round((result.score / result.total) * 100);
-  const incorrect = result.total - result.score;
+  const correct = result.questions.reduce(
+    (count, question, index) =>
+      result.userAnswers[index] === question.correctIndex ? count + 1 : count,
+    0
+  );
+  const unanswered = result.userAnswers.filter((answer) => answer === null).length;
+  const incorrect = result.total - correct - unanswered;
+  const percentage = result.total === 0 ? 0 : Math.round((correct / result.total) * 100);
 
   const handleRetake = () => {
     navigate("/quiz", {
@@ -67,7 +77,7 @@ function ScorePage() {
             <div className="score-page__ring-inner">
               <span className="score-page__pct">{percentage}%</span>
               <span className="score-page__fraction">
-                {result.score} / {result.total}
+                {correct} / {result.total}
               </span>
             </div>
           </div>
@@ -80,7 +90,7 @@ function ScorePage() {
         <div className="score-page__stats">
           <div className="score-page__stat">
             <span className="score-page__stat-value score-page__stat-value--correct">
-              {result.score}
+              {correct}
             </span>
             <span className="score-page__stat-label">Correct Answers</span>
           </div>
@@ -89,6 +99,12 @@ function ScorePage() {
               {incorrect}
             </span>
             <span className="score-page__stat-label">Incorrect Answers</span>
+          </div>
+          <div className="score-page__stat">
+            <span className="score-page__stat-value score-page__stat-value--unanswered">
+              {unanswered}
+            </span>
+            <span className="score-page__stat-label">Unanswered</span>
           </div>
           <div className="score-page__stat">
             <span className="score-page__stat-value">{percentage}%</span>

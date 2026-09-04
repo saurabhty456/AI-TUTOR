@@ -40,6 +40,8 @@ export interface QuizResult {
   userAnswers: (number | null)[];
   score: number;
   total: number;
+  percentage: number;
+  unanswered: number;
   timeTakenSeconds: number;
   completedAt: string;
 }
