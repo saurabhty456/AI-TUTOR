@@ -5,10 +5,8 @@ import base64
 import hashlib
 import hmac
 import secrets
-import sqlite3
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -16,6 +14,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from google import genai
 from google.genai import types
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.database import get_db, initialize_database
+from app.models import User
 
 
 # =========================================================
@@ -73,37 +77,9 @@ client = genai.Client(
 # AUTHENTICATION
 # =========================================================
 
-DATABASE_PATH = Path(
-    os.getenv(
-        "CODETUTOR_DATABASE_PATH",
-        str(Path(__file__).resolve().parent.parent / "codetutor.db"),
-    )
-)
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRES_IN_SECONDS = 60 * 60 * 24 * 7
-
-
-def get_db_connection() -> sqlite3.Connection:
-    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DATABASE_PATH)
-    connection.row_factory = sqlite3.Row
-    return connection
-
-
-def initialize_database() -> None:
-    with get_db_connection() as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                email TEXT NOT NULL UNIQUE,
-                password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            )
-            """
-        )
 
 
 initialize_database()
@@ -240,7 +216,10 @@ def decode_jwt(token: str) -> int:
         )
 
 
-def current_user(authorization: str | None = Header(default=None)) -> AuthUser:
+def current_user(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> AuthUser:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=401,
@@ -248,15 +227,16 @@ def current_user(authorization: str | None = Header(default=None)) -> AuthUser:
         )
 
     user_id = decode_jwt(authorization[7:])
-    with get_db_connection() as connection:
-        row = connection.execute(
-            "SELECT id, name, email, created_at FROM users WHERE id = ?",
-            (user_id,),
-        ).fetchone()
+    user = db.get(User, user_id)
 
-    if row is None:
+    if user is None:
         raise HTTPException(status_code=401, detail="User account not found.")
-    return AuthUser(**dict(row))
+    return AuthUser(
+        id=user.id,
+        name=user.name,
+        email=user.email,
+        created_at=user.created_at,
+    )
 
 
 # =========================================================
@@ -374,7 +354,7 @@ def home():
 # =========================================================
 
 @app.post("/auth/signup", response_model=AuthResponse)
-def signup(request: AuthSignupRequest):
+def signup(request: AuthSignupRequest, db: Session = Depends(get_db)):
     name = request.name.strip()
     email = normalize_email(request.email)
 
@@ -390,23 +370,24 @@ def signup(request: AuthSignupRequest):
 
     created_at = datetime.now(timezone.utc).isoformat()
     try:
-        with get_db_connection() as connection:
-            cursor = connection.execute(
-                """
-                INSERT INTO users (name, email, password_hash, created_at)
-                VALUES (?, ?, ?, ?)
-                """,
-                (name, email, hash_password(request.password), created_at),
-            )
-            user_id = cursor.lastrowid
-    except sqlite3.IntegrityError:
+        user_record = User(
+            name=name,
+            email=email,
+            password_hash=hash_password(request.password),
+            created_at=created_at,
+        )
+        db.add(user_record)
+        db.commit()
+        db.refresh(user_record)
+    except IntegrityError:
+        db.rollback()
         raise HTTPException(
             status_code=409,
             detail="An account with this email already exists.",
         )
 
     user = AuthUser(
-        id=user_id,
+        id=user_record.id,
         name=name,
         email=email,
         created_at=created_at,
@@ -419,22 +400,20 @@ def signup(request: AuthSignupRequest):
 
 
 @app.post("/auth/login", response_model=AuthResponse)
-def login(request: AuthLoginRequest):
+def login(request: AuthLoginRequest, db: Session = Depends(get_db)):
     email = normalize_email(request.email)
-    with get_db_connection() as connection:
-        row = connection.execute(
-            "SELECT * FROM users WHERE email = ?",
-            (email,),
-        ).fetchone()
+    user_record = db.scalar(select(User).where(User.email == email))
 
-    if row is None or not verify_password(request.password, row["password_hash"]):
+    if user_record is None or not verify_password(
+        request.password, user_record.password_hash
+    ):
         raise HTTPException(status_code=401, detail="Incorrect email or password.")
 
     user = AuthUser(
-        id=row["id"],
-        name=row["name"],
-        email=row["email"],
-        created_at=row["created_at"],
+        id=user_record.id,
+        name=user_record.name,
+        email=user_record.email,
+        created_at=user_record.created_at,
     )
     return AuthResponse(
         access_token=encode_jwt(user.id),
