@@ -10,6 +10,7 @@ import {
   type QuizResult,
   type Topic,
 } from "../data/quizData";
+import { TOKEN_KEY } from "../context/AuthProvider";
 import TopicSelection from "./TopicSelection";
 import QuizSetup from "./QuizSetup";
 import QuizQuestion from "./QuizQuestion";
@@ -79,6 +80,7 @@ function QuizPage() {
 
   const quizStartRef = useRef<number>(Date.now());
   const hasHandledRetake = useRef(false);
+  const completionHandledRef = useRef(false);
 
   // Handle a "Retake Quiz" navigation from the score page — jump straight
   // into a fresh quiz for the same topic/settings, skipping setup.
@@ -127,6 +129,7 @@ function QuizPage() {
     setCurrentIndex(0);
     setQuestions([]);
     setUserAnswers([]);
+    completionHandledRef.current = false;
     setTimeRemaining(
       quizConfig.timerMinutes > 0 ? quizConfig.timerMinutes * 60 : null
     );
@@ -255,8 +258,9 @@ function QuizPage() {
     }
   }
 
-  function finishQuiz() {
-    if (!selectedTopic || !config) return;
+  async function finishQuiz() {
+    if (!selectedTopic || !config || completionHandledRef.current) return;
+    completionHandledRef.current = true;
 
     const score = userAnswers.reduce<number>((total, answer, i) => {
       return answer === questions[i]?.correctIndex ? total + 1 : total;
@@ -283,6 +287,55 @@ function QuizPage() {
       timeTakenSeconds,
       completedAt: new Date().toISOString(),
     };
+
+    const payload = {
+      topic: selectedTopic.name,
+      difficulty: config.difficulty,
+      total_questions: questions.length,
+      correct_answers: score,
+      wrong_answers: questions.length - score - unanswered,
+      unanswered_questions: unanswered,
+      score_percentage: percentage,
+      time_limit: config.timerMinutes > 0 ? config.timerMinutes * 60 : 0,
+    };
+
+    try {
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (!token) {
+        throw new Error("You need to be logged in to save your quiz progress.");
+      }
+
+      const response = await fetch("http://127.0.0.1:8000/quiz/results", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        let message = "Your quiz was completed, but it could not be saved to your history.";
+        try {
+          const errorPayload = (await response.json()) as { detail?: string };
+          if (typeof errorPayload.detail === "string" && errorPayload.detail.trim()) {
+            message = errorPayload.detail;
+          }
+        } catch {
+          // Ignore malformed error payloads.
+        }
+
+        navigate("/score", { state: { ...result, saveError: message } });
+        return;
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : "Your quiz was completed, but it could not be saved to your history.";
+      navigate("/score", { state: { ...result, saveError: message } });
+      return;
+    }
 
     navigate("/score", { state: result });
   }

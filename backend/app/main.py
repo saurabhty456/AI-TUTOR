@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db, initialize_database
-from app.models import User
+from app.models import QuizResult, User
 
 
 # =========================================================
@@ -338,6 +338,31 @@ class QuizResponse(BaseModel):
     questions: list[QuizQuestion]
 
 
+class QuizResultCreate(BaseModel):
+    topic: str
+    difficulty: str
+    total_questions: int
+    correct_answers: int
+    wrong_answers: int
+    unanswered_questions: int
+    score_percentage: float
+    time_limit: int
+
+
+class QuizResultResponse(BaseModel):
+    id: int
+    user_id: int
+    topic: str
+    difficulty: str
+    total_questions: int
+    correct_answers: int
+    wrong_answers: int
+    unanswered_questions: int
+    score_percentage: float
+    time_limit: int
+    completed_at: datetime
+
+
 # =========================================================
 # HOME ROUTE
 # =========================================================
@@ -425,6 +450,114 @@ def login(request: AuthLoginRequest, db: Session = Depends(get_db)):
 @app.get("/auth/me", response_model=AuthUser)
 def me(user: AuthUser = Depends(current_user)):
     return user
+
+
+# =========================================================
+# QUIZ RESULTS
+# =========================================================
+
+@app.post("/quiz/results", response_model=QuizResultResponse)
+def create_quiz_result(
+    request: QuizResultCreate,
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    topic = request.topic.strip()
+    difficulty = request.difficulty.strip().title()
+
+    if not topic:
+        raise HTTPException(status_code=400, detail="Topic is required.")
+
+    if difficulty not in {"Easy", "Medium", "Hard"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Difficulty must be Easy, Medium, or Hard.",
+        )
+
+    total_questions = request.total_questions
+    correct_answers = request.correct_answers
+    wrong_answers = request.wrong_answers
+    unanswered_questions = request.unanswered_questions
+    score_percentage = float(request.score_percentage)
+    time_limit = request.time_limit
+
+    if total_questions <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Total questions must be greater than zero.",
+        )
+
+    if correct_answers < 0 or wrong_answers < 0 or unanswered_questions < 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Question counts cannot be negative.",
+        )
+
+    if correct_answers + wrong_answers + unanswered_questions != total_questions:
+        raise HTTPException(
+            status_code=400,
+            detail="Correct, wrong, and unanswered totals must add up to the total number of questions.",
+        )
+
+    if not 0 <= score_percentage <= 100:
+        raise HTTPException(
+            status_code=400,
+            detail="Score percentage must be between 0 and 100.",
+        )
+
+    if time_limit < 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Time limit cannot be negative.",
+        )
+
+    try:
+        quiz_result = QuizResult(
+            user_id=user.id,
+            topic=topic,
+            difficulty=difficulty,
+            total_questions=total_questions,
+            correct_answers=correct_answers,
+            wrong_answers=wrong_answers,
+            unanswered_questions=unanswered_questions,
+            score_percentage=round(score_percentage, 2),
+            time_limit=time_limit,
+            completed_at=datetime.now(timezone.utc),
+        )
+        db.add(quiz_result)
+        db.commit()
+        db.refresh(quiz_result)
+        return quiz_result
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Unable to save your quiz result right now.",
+        )
+    except Exception as error:
+        db.rollback()
+        print("Quiz result save error:", error)
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to save your quiz result right now.",
+        )
+
+
+@app.get("/quiz/results", response_model=list[QuizResultResponse])
+def get_quiz_results(
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    results = (
+        db.execute(
+            select(QuizResult)
+            .where(QuizResult.user_id == user.id)
+            .order_by(QuizResult.completed_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+    return results
 
 
 # =========================================================

@@ -13,7 +13,7 @@ function ScorePage() {
   const navigate = useNavigate();
   const [reviewOpen, setReviewOpen] = useState(false);
 
-  const result = location.state as QuizResult | null;
+  const result = location.state as (QuizResult & { saveError?: string }) | null;
 
   if (
     !result ||
@@ -63,6 +63,11 @@ function ScorePage() {
   return (
     <div className="score-page">
       <div className="score-page__card">
+        {result.saveError && (
+          <div className="score-page__alert" role="status">
+            {result.saveError}
+          </div>
+        )}
         <span className="score-page__eyebrow">Quiz Complete!</span>
         <h1>{result.topicName}</h1>
         <span className="score-page__difficulty">{result.difficulty}</span>

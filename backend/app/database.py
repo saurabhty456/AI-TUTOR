@@ -31,7 +31,7 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def initialize_database() -> None:
-    from app.models import User
+    from app.models import QuizResult, User
 
     try:
         Base.metadata.create_all(bind=engine)

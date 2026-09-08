@@ -46,6 +46,40 @@ export interface QuizResult {
   completedAt: string;
 }
 
+export interface QuizHistoryEntry {
+  id: number;
+  topic: string;
+  difficulty: string;
+  total_questions: number;
+  correct_answers: number;
+  wrong_answers: number;
+  unanswered_questions: number;
+  score_percentage: number;
+  time_limit: number;
+  completed_at: string;
+}
+
+export function formatQuizDate(value: string): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+export function formatQuizTime(value: string): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 // ---------------------------------------------------------------------
 // Mock question bank — at least 6 realistic, technically accurate
 // questions per topic, tagged by difficulty. Not connected to any
