@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db, initialize_database
-from app.models import QuizResult, User
+from app.models import Playlist, Problem, QuizResult, User
 
 
 # =========================================================
@@ -363,6 +363,46 @@ class QuizResultResponse(BaseModel):
     completed_at: datetime
 
 
+class PlaylistSummaryResponse(BaseModel):
+    id: int
+    name: str
+    slug: str
+    company_name: str
+    description: str
+    total_problems: int
+
+
+class ProblemResponse(BaseModel):
+    id: int
+    playlist_id: int
+    leetcode_id: int
+    title: str
+    leetcode_url: str
+    difficulty: str
+    acceptance_rate: float
+    frequency: float
+    is_premium: bool
+    position: int
+
+
+class ProblemNavigationResponse(BaseModel):
+    id: int
+    title: str
+    position: int
+
+
+class ProblemDetailResponse(ProblemResponse):
+    playlist_name: str
+    playlist_slug: str
+    company_name: str
+    previous_problem: ProblemNavigationResponse | None = None
+    next_problem: ProblemNavigationResponse | None = None
+
+
+class PlaylistDetailResponse(PlaylistSummaryResponse):
+    problems: list[ProblemResponse]
+
+
 # =========================================================
 # HOME ROUTE
 # =========================================================
@@ -372,6 +412,100 @@ def home():
     return {
         "message": "CodeTutor API is running!"
     }
+
+
+@app.get("/playlists", response_model=list[PlaylistSummaryResponse])
+def get_playlists(db: Session = Depends(get_db)):
+    playlists = db.scalars(select(Playlist).order_by(Playlist.name)).all()
+    return [
+        PlaylistSummaryResponse(
+            id=playlist.id,
+            name=playlist.name,
+            slug=playlist.slug,
+            company_name=playlist.company_name,
+            description=playlist.description,
+            total_problems=len(playlist.problems),
+        )
+        for playlist in playlists
+    ]
+
+
+@app.get("/playlists/{slug}", response_model=PlaylistDetailResponse)
+def get_playlist(slug: str, db: Session = Depends(get_db)):
+    playlist = db.scalar(select(Playlist).where(Playlist.slug == slug))
+    if playlist is None:
+        raise HTTPException(status_code=404, detail="Playlist not found.")
+
+    return PlaylistDetailResponse(
+        id=playlist.id,
+        name=playlist.name,
+        slug=playlist.slug,
+        company_name=playlist.company_name,
+        description=playlist.description,
+        total_problems=len(playlist.problems),
+        problems=[
+            ProblemResponse(
+                id=problem.id,
+                playlist_id=problem.playlist_id,
+                leetcode_id=problem.leetcode_id,
+                title=problem.title,
+                leetcode_url=problem.leetcode_url,
+                difficulty=problem.difficulty,
+                acceptance_rate=problem.acceptance_rate,
+                frequency=problem.frequency,
+                is_premium=problem.is_premium,
+                position=problem.position,
+            )
+            for problem in playlist.problems
+        ],
+    )
+
+
+@app.get("/problems/{problem_id}", response_model=ProblemDetailResponse)
+def get_problem(problem_id: int, db: Session = Depends(get_db)):
+    problem = db.scalar(select(Problem).where(Problem.id == problem_id))
+    if problem is None:
+        raise HTTPException(status_code=404, detail="Problem not found.")
+
+    previous_problem = db.scalar(
+        select(Problem).where(
+            Problem.playlist_id == problem.playlist_id,
+            Problem.position == problem.position - 1,
+        )
+    )
+    next_problem = db.scalar(
+        select(Problem).where(
+            Problem.playlist_id == problem.playlist_id,
+            Problem.position == problem.position + 1,
+        )
+    )
+
+    def navigation(problem_record: Problem | None):
+        if problem_record is None:
+            return None
+        return ProblemNavigationResponse(
+            id=problem_record.id,
+            title=problem_record.title,
+            position=problem_record.position,
+        )
+
+    return ProblemDetailResponse(
+        id=problem.id,
+        playlist_id=problem.playlist_id,
+        leetcode_id=problem.leetcode_id,
+        title=problem.title,
+        leetcode_url=problem.leetcode_url,
+        difficulty=problem.difficulty,
+        acceptance_rate=problem.acceptance_rate,
+        frequency=problem.frequency,
+        is_premium=problem.is_premium,
+        position=problem.position,
+        playlist_name=problem.playlist.name,
+        playlist_slug=problem.playlist.slug,
+        company_name=problem.playlist.company_name,
+        previous_problem=navigation(previous_problem),
+        next_problem=navigation(next_problem),
+    )
 
 
 # =========================================================

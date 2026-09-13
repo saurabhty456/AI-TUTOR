@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -44,3 +44,52 @@ class QuizResult(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="quiz_results")
+
+
+class Playlist(Base):
+    __tablename__ = "playlists"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    company_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(String(1000), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    problems: Mapped[list["Problem"]] = relationship(
+        back_populates="playlist",
+        cascade="all, delete-orphan",
+        order_by="Problem.position",
+    )
+
+
+class Problem(Base):
+    __tablename__ = "problems"
+    __table_args__ = (
+        UniqueConstraint("playlist_id", "leetcode_id", name="uq_problem_playlist_leetcode_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    playlist_id: Mapped[int] = mapped_column(
+        ForeignKey("playlists.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    leetcode_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    leetcode_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    difficulty: Mapped[str] = mapped_column(String(50), nullable=False)
+    acceptance_rate: Mapped[float] = mapped_column(Float, nullable=False)
+    frequency: Mapped[float] = mapped_column(Float, nullable=False)
+    is_premium: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    playlist: Mapped[Playlist] = relationship(back_populates="problems")

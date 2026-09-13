@@ -11,6 +11,9 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import { AuthProvider } from "./context/AuthProvider";
 
 import QuizPage from "./components/QuizPage";
+import PlaylistListPage from "./pages/PlaylistListPage";
+import PlaylistDetailPage from "./pages/PlaylistDetailPage";
+import ProblemDetailPage from "./pages/ProblemDetailPage";
 
 function App() {
   return (
@@ -29,6 +32,9 @@ function App() {
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/quiz" element={<QuizPage />} />
           <Route path="/score" element={<ScorePage />} />
+          <Route path="/playlists" element={<PlaylistListPage />} />
+          <Route path="/playlists/:slug" element={<PlaylistDetailPage />} />
+          <Route path="/problems/:problemId" element={<ProblemDetailPage />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

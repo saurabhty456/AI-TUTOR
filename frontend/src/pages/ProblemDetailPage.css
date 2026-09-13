@@ -1,0 +1,90 @@
+.problem-detail-page {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(91, 124, 255, 0.13), transparent 28rem),
+    radial-gradient(circle at 88% 42%, rgba(53, 201, 179, 0.07), transparent 24rem),
+    var(--ct-bg);
+}
+
+.problem-detail-shell {
+  width: min(1080px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 52px 0 112px;
+}
+
+.problem-detail-state { color: var(--ct-text-secondary); padding: 80px 0; }
+.problem-detail-state--error { color: #ff8e9b; }
+.problem-detail-back { color: var(--ct-text-secondary); text-decoration: none; }
+.problem-detail-back:hover, .problem-detail-link:hover { color: var(--ct-accent-hover); }
+.problem-detail-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 40px;
+  padding: 72px 0 54px;
+}
+.problem-detail-eyebrow {
+  color: var(--ct-accent);
+  font: 600 12px/1.4 var(--ct-font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.problem-detail-hero h1 {
+  max-width: 760px;
+  margin: 18px 0 24px;
+  color: var(--ct-text-primary);
+  font: 600 clamp(36px, 6vw, 68px)/1.05 var(--ct-font-display);
+}
+.problem-detail-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.problem-detail-difficulty, .problem-detail-premium, .problem-detail-number {
+  padding: 7px 10px;
+  border-radius: 5px;
+  font: 600 11px var(--ct-font-mono);
+}
+.problem-detail-difficulty--easy { color: #35c98a; background: rgba(53, 201, 138, 0.1); }
+.problem-detail-difficulty--medium { color: #f5bd60; background: rgba(245, 189, 96, 0.1); }
+.problem-detail-difficulty--hard { color: #ff8e9b; background: rgba(255, 142, 155, 0.1); }
+.problem-detail-premium { color: #c2a4ff; background: rgba(194, 164, 255, 0.1); }
+.problem-detail-number { color: var(--ct-text-muted); border: 1px solid var(--ct-border); }
+.problem-detail-hero__meta { display: flex; gap: 34px; padding-bottom: 2px; }
+.problem-detail-hero__meta div { display: grid; gap: 5px; min-width: 88px; }
+.problem-detail-hero__meta strong { color: var(--ct-text-primary); font: 600 26px var(--ct-font-display); }
+.problem-detail-hero__meta span { color: var(--ct-text-muted); font: 500 11px var(--ct-font-mono); text-transform: uppercase; }
+.problem-detail-practice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 30px;
+  padding: 30px;
+  border: 1px solid var(--ct-border);
+  border-radius: var(--ct-radius-md);
+  background: linear-gradient(135deg, var(--ct-surface), rgba(20, 25, 35, 0.78));
+}
+.problem-detail-practice h2 { margin: 12px 0 8px; color: var(--ct-text-primary); font: 600 22px var(--ct-font-display); }
+.problem-detail-practice p { max-width: 650px; margin: 0; color: var(--ct-text-secondary); line-height: 1.65; }
+.problem-detail-link { flex: 0 0 auto; color: var(--ct-accent); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.problem-detail-navigation { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 22px; }
+.problem-detail-nav-card {
+  display: grid;
+  gap: 8px;
+  padding: 22px;
+  border: 1px solid var(--ct-border);
+  border-radius: var(--ct-radius-md);
+  color: var(--ct-text-primary);
+  text-decoration: none;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+.problem-detail-nav-card:hover { border-color: var(--ct-accent); transform: translateY(-2px); }
+.problem-detail-nav-card--next { text-align: right; }
+.problem-detail-nav-card span { color: var(--ct-accent); font: 600 11px var(--ct-font-mono); text-transform: uppercase; }
+.problem-detail-nav-card strong { font: 600 16px var(--ct-font-display); }
+.problem-detail-nav-card small { color: var(--ct-text-muted); }
+
+@media (max-width: 700px) {
+  .problem-detail-shell { width: min(100% - 32px, 1080px); padding-bottom: 76px; }
+  .problem-detail-hero { align-items: start; flex-direction: column; padding: 52px 0 36px; gap: 28px; }
+  .problem-detail-hero__meta { padding: 0; }
+  .problem-detail-practice { align-items: start; flex-direction: column; padding: 22px; }
+  .problem-detail-navigation { grid-template-columns: 1fr; }
+  .problem-detail-nav-card--next { text-align: left; }
+}
