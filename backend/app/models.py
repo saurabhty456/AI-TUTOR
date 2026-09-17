@@ -93,3 +93,30 @@ class Problem(Base):
     )
 
     playlist: Mapped[Playlist] = relationship(back_populates="problems")
+    test_cases: Mapped[list["ProblemTestCase"]] = relationship(
+        back_populates="problem",
+        cascade="all, delete-orphan",
+        order_by="ProblemTestCase.position",
+    )
+
+
+class ProblemTestCase(Base):
+    __tablename__ = "problem_test_cases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    problem_id: Mapped[int] = mapped_column(
+        ForeignKey("problems.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    input_data: Mapped[str] = mapped_column(String(10000), nullable=False)
+    expected_output: Mapped[str] = mapped_column(String(10000), nullable=False)
+    is_sample: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    problem: Mapped[Problem] = relationship(back_populates="test_cases")

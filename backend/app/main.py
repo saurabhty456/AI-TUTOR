@@ -7,11 +7,12 @@ import hmac
 import secrets
 import time
 from datetime import datetime, timezone
+from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
 from sqlalchemy import select
@@ -19,6 +20,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db, initialize_database
+from app.code_execution import MAX_CODE_BYTES, code_executor
+from app.code_judge import JudgeResult, judge_submission
 from app.models import Playlist, Problem, QuizResult, User
 
 
@@ -403,6 +406,42 @@ class PlaylistDetailResponse(PlaylistSummaryResponse):
     problems: list[ProblemResponse]
 
 
+class CodeRunRequest(BaseModel):
+    language: Literal["python"]
+    code: str = Field(max_length=MAX_CODE_BYTES)
+
+
+class CodeRunResponse(BaseModel):
+    status: str
+    stdout: str
+    stderr: str
+    executionTimeMs: int
+
+
+class CodeSubmitRequest(BaseModel):
+    problemId: int
+    language: Literal["python"]
+    code: str = Field(max_length=MAX_CODE_BYTES)
+
+
+class CodeTestCaseResponse(BaseModel):
+    position: int
+    isSample: bool
+    passed: bool
+    input: str | None = None
+    expectedOutput: str | None = None
+    actualOutput: str | None = None
+    error: str | None = None
+
+
+class CodeSubmitResponse(BaseModel):
+    status: Literal["accepted", "wrong_answer", "runtime_error", "timeout"]
+    passed: int
+    total: int
+    executionTimeMs: int
+    testCases: list[CodeTestCaseResponse]
+
+
 # =========================================================
 # HOME ROUTE
 # =========================================================
@@ -412,6 +451,55 @@ def home():
     return {
         "message": "CodeTutor API is running!"
     }
+
+
+@app.post("/code/run", response_model=CodeRunResponse)
+def run_code(request: CodeRunRequest):
+    result = code_executor.run(request.code, request.language)
+    return CodeRunResponse(
+        status=result.status,
+        stdout=result.stdout,
+        stderr=result.stderr,
+        executionTimeMs=result.execution_time_ms,
+    )
+
+
+@app.post("/code/submit", response_model=CodeSubmitResponse)
+def submit_code(
+    request: CodeSubmitRequest,
+    _user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    problem = db.get(Problem, request.problemId)
+    if problem is None:
+        raise HTTPException(status_code=404, detail="Problem not found.")
+    if not problem.test_cases:
+        raise HTTPException(status_code=400, detail="This problem has no test cases yet.")
+
+    result: JudgeResult = judge_submission(
+        executor=code_executor,
+        code=request.code,
+        language=request.language,
+        test_cases=problem.test_cases,
+    )
+    return CodeSubmitResponse(
+        status=result.status,
+        passed=result.passed,
+        total=result.total,
+        executionTimeMs=result.execution_time_ms,
+        testCases=[
+            CodeTestCaseResponse(
+                position=test_case.position,
+                isSample=test_case.is_sample,
+                passed=test_case.passed,
+                input=test_case.input_data,
+                expectedOutput=test_case.expected_output,
+                actualOutput=test_case.actual_output,
+                error=test_case.error,
+            )
+            for test_case in result.test_cases
+        ],
+    )
 
 
 @app.get("/playlists", response_model=list[PlaylistSummaryResponse])
