@@ -8,11 +8,30 @@ import "../components/auth.css";
 
 const API_BASE = "http://127.0.0.1:8000";
 
+type CodingProgress = {
+  totalProblems: number;
+  solvedProblems: number;
+  attemptedProblems: number;
+  progressPercent: number;
+  totalSubmissions: number;
+  acceptedSubmissions: number;
+  acceptanceRate: number;
+};
+
+type PlaylistProgress = {
+  playlist: string;
+  totalProblems: number;
+  solvedProblems: number;
+  progressPercent: number;
+};
+
 export default function DashboardPage() {
   const { currentUser } = useAuth();
   const firstName = currentUser?.name.split(" ")[0] ?? "there";
   const [results, setResults] = useState<QuizHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [codingProgress, setCodingProgress] = useState<CodingProgress | null>(null);
+  const [playlistProgress, setPlaylistProgress] = useState<PlaylistProgress[]>([]);
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -36,6 +55,19 @@ export default function DashboardPage() {
       .then((data) => setResults(Array.isArray(data) ? data : []))
       .catch(() => setResults([]))
       .finally(() => setLoading(false));
+
+    Promise.all([
+      fetch(`${API_BASE}/code/progress`, { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`${API_BASE}/code/progress/playlists`, { headers: { Authorization: `Bearer ${token}` } }),
+    ])
+      .then(async ([progressResponse, playlistResponse]) => {
+        if (progressResponse.ok) setCodingProgress((await progressResponse.json()) as CodingProgress);
+        if (playlistResponse.ok) setPlaylistProgress((await playlistResponse.json()) as PlaylistProgress[]);
+      })
+      .catch(() => {
+        setCodingProgress(null);
+        setPlaylistProgress([]);
+      });
   }, []);
 
   const stats = useMemo(() => {
@@ -149,6 +181,39 @@ export default function DashboardPage() {
             </article>
           ))}
         </div>
+
+        <section className="dashboard-coding-progress" aria-labelledby="coding-progress-heading">
+          <div className="dashboard-panel__header">
+            <div>
+              <span className="auth-eyebrow">Coding progress</span>
+              <h3 id="coding-progress-heading">DSA practice</h3>
+            </div>
+            <Link to="/history" className="dashboard-panel__link">Submission history</Link>
+          </div>
+          <div className="dashboard-coding-stats">
+            {[
+              ["Problems Solved", codingProgress?.solvedProblems ?? 0],
+              ["Problems Attempted", codingProgress?.attemptedProblems ?? 0],
+              ["Total Submissions", codingProgress?.totalSubmissions ?? 0],
+              ["Acceptance Rate", `${codingProgress?.acceptanceRate ?? 0}%`],
+            ].map(([label, value]) => (
+              <div className="dashboard-coding-stat" key={label}>
+                <strong>{codingProgress ? value : "--"}</strong>
+                <span>{label}</span>
+              </div>
+            ))}
+          </div>
+          {playlistProgress.length > 0 ? (
+            <div className="dashboard-playlist-progress">
+              {playlistProgress.map((entry) => (
+                <div className="dashboard-playlist-progress__item" key={entry.playlist}>
+                  <div><strong>{entry.playlist}</strong><span>{entry.solvedProblems} / {entry.totalProblems} solved</span></div>
+                  <strong>{entry.progressPercent}%</strong>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
 
         <div className="dashboard-panel-group">
           <section className="dashboard-panel">

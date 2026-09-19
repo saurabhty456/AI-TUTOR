@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
+import { TOKEN_KEY } from "../context/AuthProvider";
 import "../styles/landing.css";
 import "../styles/playlists.css";
 
@@ -27,20 +28,38 @@ type Playlist = {
   problems: Problem[];
 };
 
+type ProblemProgress = {
+  problemId: number;
+  solved: boolean;
+  attempted: boolean;
+};
+
 export default function PlaylistDetailPage() {
   const { slug } = useParams();
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [problemProgress, setProblemProgress] = useState<Record<number, ProblemProgress>>({});
+  const [showProgress, setShowProgress] = useState(false);
 
   useEffect(() => {
     if (!slug) return;
-    fetch(`${API_BASE}/playlists/${slug}`)
-      .then(async (response) => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    setShowProgress(Boolean(token));
+    Promise.all([
+      fetch(`${API_BASE}/playlists/${slug}`).then(async (response) => {
         if (!response.ok) throw new Error("Unable to load playlist.");
         return (await response.json()) as Playlist;
+      }),
+      token
+        ? fetch(`${API_BASE}/code/playlists/${slug}/progress`, { headers: { Authorization: `Bearer ${token}` } })
+            .then(async (response) => response.ok ? (await response.json()) as ProblemProgress[] : [])
+        : Promise.resolve([] as ProblemProgress[]),
+    ])
+      .then(([playlistData, progressData]) => {
+        setPlaylist(playlistData);
+        setProblemProgress(Object.fromEntries(progressData.map((item) => [item.problemId, item])));
       })
-      .then(setPlaylist)
       .catch(() => setError("This playlist is temporarily unavailable."))
       .finally(() => setLoading(false));
   }, [slug]);
@@ -76,6 +95,11 @@ export default function PlaylistDetailPage() {
                   </span>
                   <span className="problem-row__frequency">Frequency <strong>{problem.frequency}%</strong></span>
                   {problem.is_premium ? <span className="premium-badge">Premium</span> : null}
+                  {showProgress ? (
+                    <span className={`problem-row__status problem-row__status--${problemProgress[problem.id]?.solved ? "solved" : problemProgress[problem.id]?.attempted ? "attempted" : "unattempted"}`}>
+                      {problemProgress[problem.id]?.solved ? "✓ Solved" : problemProgress[problem.id]?.attempted ? "● Attempted" : "○ Not Attempted"}
+                    </span>
+                  ) : null}
                 </Link>
               ))}
             </section>

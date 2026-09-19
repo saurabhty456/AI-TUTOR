@@ -15,14 +15,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
-from sqlalchemy import select
+from sqlalchemy import distinct, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db, initialize_database
 from app.code_execution import MAX_CODE_BYTES, code_executor
 from app.code_judge import JudgeResult, judge_submission
-from app.models import Playlist, Problem, QuizResult, User
+from app.models import CodeSubmission, Playlist, Problem, QuizResult, User
 
 
 # =========================================================
@@ -442,6 +442,50 @@ class CodeSubmitResponse(BaseModel):
     testCases: list[CodeTestCaseResponse]
 
 
+class CodeProgressResponse(BaseModel):
+    totalProblems: int
+    solvedProblems: int
+    attemptedProblems: int
+    progressPercent: float
+    totalSubmissions: int
+    acceptedSubmissions: int
+    acceptanceRate: float
+
+
+class ProblemProgressResponse(BaseModel):
+    solved: bool
+    attempts: int
+    accepted: bool
+    lastStatus: str | None = None
+    lastSubmittedAt: datetime | None = None
+    bestExecutionTimeMs: int | None = None
+
+
+class PlaylistProgressResponse(BaseModel):
+    playlist: str
+    totalProblems: int
+    solvedProblems: int
+    progressPercent: float
+
+
+class ProblemPlaylistProgressResponse(BaseModel):
+    problemId: int
+    solved: bool
+    attempted: bool
+
+
+class CodeSubmissionHistoryResponse(BaseModel):
+    id: int
+    problemId: int
+    problemTitle: str
+    status: str
+    language: str
+    passedTests: int
+    totalTests: int
+    executionTimeMs: int
+    createdAt: datetime
+
+
 # =========================================================
 # HOME ROUTE
 # =========================================================
@@ -482,6 +526,18 @@ def submit_code(
         language=request.language,
         test_cases=problem.test_cases,
     )
+    submission = CodeSubmission(
+        user_id=_user.id,
+        problem_id=problem.id,
+        language=request.language,
+        code=request.code,
+        status=result.status,
+        passed_tests=result.passed,
+        total_tests=result.total,
+        execution_time_ms=result.execution_time_ms,
+    )
+    db.add(submission)
+    db.commit()
     return CodeSubmitResponse(
         status=result.status,
         passed=result.passed,
@@ -500,6 +556,168 @@ def submit_code(
             for test_case in result.test_cases
         ],
     )
+
+
+@app.get("/code/progress", response_model=CodeProgressResponse)
+def get_code_progress(
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    total_problems = db.scalar(select(func.count(Problem.id))) or 0
+    total_submissions = db.scalar(
+        select(func.count(CodeSubmission.id)).where(CodeSubmission.user_id == user.id)
+    ) or 0
+    accepted_submissions = db.scalar(
+        select(func.count(CodeSubmission.id)).where(
+            CodeSubmission.user_id == user.id,
+            CodeSubmission.status == "accepted",
+        )
+    ) or 0
+    attempted_problems = db.scalar(
+        select(func.count(distinct(CodeSubmission.problem_id))).where(
+            CodeSubmission.user_id == user.id
+        )
+    ) or 0
+    solved_problems = db.scalar(
+        select(func.count(distinct(CodeSubmission.problem_id))).where(
+            CodeSubmission.user_id == user.id,
+            CodeSubmission.status == "accepted",
+        )
+    ) or 0
+
+    return CodeProgressResponse(
+        totalProblems=total_problems,
+        solvedProblems=solved_problems,
+        attemptedProblems=attempted_problems,
+        progressPercent=round(solved_problems / total_problems * 100, 2) if total_problems else 0,
+        totalSubmissions=total_submissions,
+        acceptedSubmissions=accepted_submissions,
+        acceptanceRate=round(accepted_submissions / total_submissions * 100, 2) if total_submissions else 0,
+    )
+
+
+@app.get("/code/progress/playlists", response_model=list[PlaylistProgressResponse])
+def get_playlist_progress(
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    playlist_rows = db.execute(
+        select(Playlist.id, Playlist.name, Problem.id).join(Problem, Problem.playlist_id == Playlist.id)
+    ).all()
+    accepted_problem_ids = set(
+        db.scalars(
+            select(distinct(CodeSubmission.problem_id)).where(
+                CodeSubmission.user_id == user.id,
+                CodeSubmission.status == "accepted",
+            )
+        ).all()
+    )
+    grouped: dict[int, dict[str, object]] = {}
+    for playlist_id, playlist_name, problem_id in playlist_rows:
+        group = grouped.setdefault(playlist_id, {"name": playlist_name, "total": 0, "solved": set()})
+        group["total"] = int(group["total"]) + 1
+        if problem_id in accepted_problem_ids:
+            group["solved"].add(problem_id)  # type: ignore[union-attr]
+
+    return [
+        PlaylistProgressResponse(
+            playlist=str(group["name"]),
+            totalProblems=int(group["total"]),
+            solvedProblems=len(group["solved"]),  # type: ignore[arg-type]
+            progressPercent=round(len(group["solved"]) / int(group["total"]) * 100, 2),  # type: ignore[arg-type]
+        )
+        for group in grouped.values()
+    ]
+
+
+@app.get("/code/problems/{problem_id}/progress", response_model=ProblemProgressResponse)
+def get_problem_progress(
+    problem_id: int,
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if db.get(Problem, problem_id) is None:
+        raise HTTPException(status_code=404, detail="Problem not found.")
+
+    submissions = db.scalars(
+        select(CodeSubmission)
+        .where(CodeSubmission.user_id == user.id, CodeSubmission.problem_id == problem_id)
+        .order_by(CodeSubmission.created_at.desc(), CodeSubmission.id.desc())
+    ).all()
+    accepted = any(submission.status == "accepted" for submission in submissions)
+    return ProblemProgressResponse(
+        solved=accepted,
+        attempts=len(submissions),
+        accepted=accepted,
+        lastStatus=submissions[0].status if submissions else None,
+        lastSubmittedAt=submissions[0].created_at if submissions else None,
+        bestExecutionTimeMs=min((submission.execution_time_ms for submission in submissions), default=None),
+    )
+
+
+@app.get("/code/playlists/{slug}/progress", response_model=list[ProblemPlaylistProgressResponse])
+def get_playlist_problem_progress(
+    slug: str,
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    playlist = db.scalar(select(Playlist).where(Playlist.slug == slug))
+    if playlist is None:
+        raise HTTPException(status_code=404, detail="Playlist not found.")
+
+    problems = db.scalars(select(Problem).where(Problem.playlist_id == playlist.id).order_by(Problem.position)).all()
+    accepted_ids = set(
+        db.scalars(
+            select(distinct(CodeSubmission.problem_id)).where(
+                CodeSubmission.user_id == user.id,
+                CodeSubmission.problem_id.in_([problem.id for problem in problems]),
+                CodeSubmission.status == "accepted",
+            )
+        ).all()
+    ) if problems else set()
+    attempted_ids = set(
+        db.scalars(
+            select(distinct(CodeSubmission.problem_id)).where(
+                CodeSubmission.user_id == user.id,
+                CodeSubmission.problem_id.in_([problem.id for problem in problems]),
+            )
+        ).all()
+    ) if problems else set()
+    return [
+        ProblemPlaylistProgressResponse(
+            problemId=problem.id,
+            solved=problem.id in accepted_ids,
+            attempted=problem.id in attempted_ids,
+        )
+        for problem in problems
+    ]
+
+
+@app.get("/code/submissions", response_model=list[CodeSubmissionHistoryResponse])
+def get_code_submissions(
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    rows = db.execute(
+        select(CodeSubmission, Problem.title)
+        .join(Problem, Problem.id == CodeSubmission.problem_id)
+        .where(CodeSubmission.user_id == user.id)
+        .order_by(CodeSubmission.created_at.desc(), CodeSubmission.id.desc())
+    ).all()
+    return [
+        CodeSubmissionHistoryResponse(
+            id=submission.id,
+            problemId=submission.problem_id,
+            problemTitle=title,
+            status=submission.status,
+            language=submission.language,
+            passedTests=submission.passed_tests,
+            totalTests=submission.total_tests,
+            executionTimeMs=submission.execution_time_ms,
+            createdAt=submission.created_at,
+        )
+        for submission, title in rows
+    ]
 
 
 @app.get("/playlists", response_model=list[PlaylistSummaryResponse])

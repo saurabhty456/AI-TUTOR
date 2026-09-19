@@ -79,18 +79,19 @@ class DockerPythonExecutor(CodeExecutor):
                 "65534:65534",
                 "--mount",
                 f"type=bind,source={workdir},target=/runner,readonly",
-                "-i",
                 DOCKER_IMAGE,
                 "python",
                 "-I",
                 "-S",
                 "/runner/main.py",
             ]
+            if stdin:
+                command.insert(command.index(DOCKER_IMAGE), "-i")
 
             try:
                 process = subprocess.Popen(
                     command,
-                    stdin=subprocess.PIPE,
+                    stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     env={"PATH": os.environ.get("PATH", "")},
@@ -126,8 +127,9 @@ class DockerPythonExecutor(CodeExecutor):
             stderr_thread.start()
 
             try:
-                process.stdin.write(stdin.encode("utf-8"))
-                process.stdin.close()
+                if stdin:
+                    process.stdin.write(stdin.encode("utf-8"))
+                    process.stdin.close()
                 process.wait(timeout=EXECUTION_TIMEOUT_SECONDS)
             except (BrokenPipeError, OSError):
                 process.kill()

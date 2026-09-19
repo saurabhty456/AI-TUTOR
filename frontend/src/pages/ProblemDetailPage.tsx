@@ -63,6 +63,15 @@ type CodeSubmitResponse = {
   testCases: CodeSubmitTestCase[];
 };
 
+type ProblemProgress = {
+  solved: boolean;
+  attempts: number;
+  accepted: boolean;
+  lastStatus: string | null;
+  lastSubmittedAt: string | null;
+  bestExecutionTimeMs: number | null;
+};
+
 export default function ProblemDetailPage() {
   const { problemId } = useParams();
   const [problem, setProblem] = useState<Problem | null>(null);
@@ -79,6 +88,7 @@ export default function ProblemDetailPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<CodeSubmitResponse | null>(null);
   const [submitError, setSubmitError] = useState("");
+  const [progress, setProgress] = useState<ProblemProgress | null>(null);
 
   const handleEditorMount: OnMount = (editor) => {
     editor.focus();
@@ -119,11 +129,25 @@ export default function ProblemDetailPage() {
         throw new Error(response.status === 401 ? "Sign in to submit your solution for evaluation." : "Unable to evaluate this submission.");
       }
       setSubmitResult((await response.json()) as CodeSubmitResponse);
+      await refreshProgress();
     } catch (submissionError) {
       setSubmitError(submissionError instanceof Error ? submissionError.message : "Unable to evaluate this submission.");
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const refreshProgress = async () => {
+    if (!problemId) return;
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      setProgress(null);
+      return;
+    }
+    const response = await fetch(`${API_BASE}/code/problems/${problemId}/progress`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (response.ok) setProgress((await response.json()) as ProblemProgress);
   };
 
   const handleRun = async () => {
@@ -172,6 +196,10 @@ export default function ProblemDetailPage() {
       .finally(() => setLoading(false));
   }, [problemId]);
 
+  useEffect(() => {
+    void refreshProgress();
+  }, [problemId]);
+
   const isProblemLoading = loading || !problem || problem.id !== Number(problemId);
 
   return (
@@ -198,6 +226,11 @@ export default function ProblemDetailPage() {
                   </span>
                   {problem.is_premium ? <span className="problem-detail-premium">Premium</span> : null}
                   <span className="problem-detail-number">Problem {String(problem.position).padStart(2, "0")}</span>
+                  {progress ? (
+                    <span className={`problem-detail-status problem-detail-status--${progress.solved ? "solved" : "attempted"}`}>
+                      {progress.solved ? "Solved" : "Attempted"}
+                    </span>
+                  ) : null}
                 </div>
               </div>
               <div className="problem-detail-hero__meta">

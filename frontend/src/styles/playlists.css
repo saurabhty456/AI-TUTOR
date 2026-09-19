@@ -69,6 +69,9 @@
 .difficulty--medium { color: #f5bd60; background: rgba(245, 189, 96, 0.1); }
 .difficulty--hard { color: #ff8e9b; background: rgba(255, 142, 155, 0.1); }
 .premium-badge { color: #c2a4ff; background: rgba(194, 164, 255, 0.1); }
+.problem-row__status { color: var(--ct-text-muted); font: 600 11px var(--ct-font-mono); white-space: nowrap; }
+.problem-row__status--solved { color: #35c98a; }
+.problem-row__status--attempted { color: #f5bd60; }
 
 @media (max-width: 700px) {
   .playlist-shell { width: min(100% - 32px, 1080px); padding: 64px 0 76px; }
@@ -79,4 +82,5 @@
   .problem-row { grid-template-columns: 38px minmax(0, 1fr) auto; gap: 12px; }
   .problem-row__frequency { grid-column: 2; }
   .premium-badge { grid-column: 3; grid-row: 2; }
+  .problem-row__status { grid-column: 2 / -1; }
 }
