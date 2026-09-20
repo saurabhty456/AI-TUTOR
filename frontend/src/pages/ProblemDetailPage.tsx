@@ -36,6 +36,11 @@ type Problem = {
   company_name: string;
   previous_problem: ProblemNavigation | null;
   next_problem: ProblemNavigation | null;
+  execution_spec: {
+    starter_code: string;
+    language: string;
+    execution_type: "function" | "stdin_stdout";
+  } | null;
 };
 
 type CodeRunResponse = {
@@ -95,7 +100,7 @@ export default function ProblemDetailPage() {
   };
 
   const handleReset = () => {
-    setCode(STARTER_CODE);
+    setCode(problem?.execution_spec?.starter_code ?? STARTER_CODE);
     setOutput("Editor reset to the original starter code.");
     setExecutionStatus("idle");
     setExecutionTimeMs(null);
@@ -162,7 +167,7 @@ export default function ProblemDetailPage() {
       const response = await fetch(`${API_BASE}/code/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ language, code }),
+        body: JSON.stringify({ problemId: problem?.id, language, code }),
       });
       const result = (await response.json()) as CodeRunResponse;
       if (!response.ok && !result.status) throw new Error("The execution service returned an invalid response.");
@@ -195,6 +200,15 @@ export default function ProblemDetailPage() {
       .catch(() => setError("This problem is temporarily unavailable."))
       .finally(() => setLoading(false));
   }, [problemId]);
+
+  useEffect(() => {
+    if (problem?.execution_spec) {
+      setCode(problem.execution_spec.starter_code);
+      setLanguage(problem.execution_spec.language as typeof language);
+      setSubmitResult(null);
+      setSubmitError("");
+    }
+  }, [problem]);
 
   useEffect(() => {
     void refreshProgress();

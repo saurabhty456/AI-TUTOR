@@ -21,8 +21,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db, initialize_database
 from app.code_execution import MAX_CODE_BYTES, code_executor
-from app.code_judge import JudgeResult, judge_submission
-from app.models import CodeSubmission, Playlist, Problem, QuizResult, User
+from app.code_judge import JudgeResult, judge_submission, run_problem_code
+from app.models import CodeSubmission, Playlist, PlaylistProblem, Problem, QuizResult, User
 
 
 # =========================================================
@@ -384,8 +384,22 @@ class ProblemResponse(BaseModel):
     difficulty: str
     acceptance_rate: float
     frequency: float
-    is_premium: bool
+    is_premium: bool | None
     position: int
+
+
+class ExecutionSpecResponse(BaseModel):
+    id: int
+    problem_id: int
+    language: str
+    execution_type: Literal["function", "stdin_stdout"]
+    function_name: str | None = None
+    starter_code: str
+    input_format: str
+    output_format: str
+    output_comparison: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class ProblemNavigationResponse(BaseModel):
@@ -398,6 +412,7 @@ class ProblemDetailResponse(ProblemResponse):
     playlist_name: str
     playlist_slug: str
     company_name: str
+    execution_spec: "ExecutionSpecResponse | None" = None
     previous_problem: ProblemNavigationResponse | None = None
     next_problem: ProblemNavigationResponse | None = None
 
@@ -407,6 +422,7 @@ class PlaylistDetailResponse(PlaylistSummaryResponse):
 
 
 class CodeRunRequest(BaseModel):
+    problemId: int
     language: Literal["python"]
     code: str = Field(max_length=MAX_CODE_BYTES)
 
@@ -498,8 +514,20 @@ def home():
 
 
 @app.post("/code/run", response_model=CodeRunResponse)
-def run_code(request: CodeRunRequest):
-    result = code_executor.run(request.code, request.language)
+def run_code(request: CodeRunRequest, db: Session = Depends(get_db)):
+    problem = db.get(Problem, request.problemId)
+    if problem is None or problem.execution_spec is None:
+        raise HTTPException(status_code=400, detail="This problem has no execution specification yet.")
+    sample = next((test_case for test_case in problem.test_cases if test_case.is_sample), None)
+    if sample is None:
+        raise HTTPException(status_code=400, detail="This problem has no public sample input yet.")
+    result = run_problem_code(
+        executor=code_executor,
+        code=request.code,
+        language=request.language,
+        execution_spec=problem.execution_spec,
+        input_data=sample.input_data,
+    )
     return CodeRunResponse(
         status=result.status,
         stdout=result.stdout,
@@ -519,11 +547,14 @@ def submit_code(
         raise HTTPException(status_code=404, detail="Problem not found.")
     if not problem.test_cases:
         raise HTTPException(status_code=400, detail="This problem has no test cases yet.")
+    if problem.execution_spec is None:
+        raise HTTPException(status_code=400, detail="This problem has no execution specification yet.")
 
     result: JudgeResult = judge_submission(
         executor=code_executor,
         code=request.code,
         language=request.language,
+        execution_spec=problem.execution_spec,
         test_cases=problem.test_cases,
     )
     submission = CodeSubmission(
@@ -602,7 +633,7 @@ def get_playlist_progress(
     db: Session = Depends(get_db),
 ):
     playlist_rows = db.execute(
-        select(Playlist.id, Playlist.name, Problem.id).join(Problem, Problem.playlist_id == Playlist.id)
+        select(Playlist.id, Playlist.name, PlaylistProblem.problem_id).join(PlaylistProblem, PlaylistProblem.playlist_id == Playlist.id)
     ).all()
     accepted_problem_ids = set(
         db.scalars(
@@ -665,7 +696,8 @@ def get_playlist_problem_progress(
     if playlist is None:
         raise HTTPException(status_code=404, detail="Playlist not found.")
 
-    problems = db.scalars(select(Problem).where(Problem.playlist_id == playlist.id).order_by(Problem.position)).all()
+    memberships = db.scalars(select(PlaylistProblem).where(PlaylistProblem.playlist_id == playlist.id).order_by(PlaylistProblem.position)).all()
+    problems = [membership.problem for membership in memberships]
     accepted_ids = set(
         db.scalars(
             select(distinct(CodeSubmission.problem_id)).where(
@@ -730,7 +762,7 @@ def get_playlists(db: Session = Depends(get_db)):
             slug=playlist.slug,
             company_name=playlist.company_name,
             description=playlist.description,
-            total_problems=len(playlist.problems),
+            total_problems=len(playlist.memberships),
         )
         for playlist in playlists
     ]
@@ -748,21 +780,21 @@ def get_playlist(slug: str, db: Session = Depends(get_db)):
         slug=playlist.slug,
         company_name=playlist.company_name,
         description=playlist.description,
-        total_problems=len(playlist.problems),
+        total_problems=len(playlist.memberships),
         problems=[
             ProblemResponse(
-                id=problem.id,
-                playlist_id=problem.playlist_id,
-                leetcode_id=problem.leetcode_id,
-                title=problem.title,
-                leetcode_url=problem.leetcode_url,
-                difficulty=problem.difficulty,
-                acceptance_rate=problem.acceptance_rate,
-                frequency=problem.frequency,
-                is_premium=problem.is_premium,
-                position=problem.position,
+                id=membership.problem.id,
+                playlist_id=playlist.id,
+                leetcode_id=membership.problem.leetcode_id,
+                title=membership.problem.title,
+                leetcode_url=membership.problem.leetcode_url,
+                difficulty=membership.problem.difficulty,
+                acceptance_rate=membership.acceptance_rate,
+                frequency=membership.frequency,
+                is_premium=membership.problem.is_premium,
+                position=membership.position,
             )
-            for problem in playlist.problems
+            for membership in playlist.memberships
         ],
     )
 
@@ -773,44 +805,66 @@ def get_problem(problem_id: int, db: Session = Depends(get_db)):
     if problem is None:
         raise HTTPException(status_code=404, detail="Problem not found.")
 
-    previous_problem = db.scalar(
-        select(Problem).where(
-            Problem.playlist_id == problem.playlist_id,
-            Problem.position == problem.position - 1,
+    membership = db.scalar(
+        select(PlaylistProblem).where(PlaylistProblem.problem_id == problem.id).order_by(PlaylistProblem.id)
+    )
+    if membership is None:
+        raise HTTPException(status_code=404, detail="Problem is not attached to a playlist.")
+
+    previous_membership = db.scalar(
+        select(PlaylistProblem).where(
+            PlaylistProblem.playlist_id == membership.playlist_id,
+            PlaylistProblem.position == membership.position - 1,
         )
     )
-    next_problem = db.scalar(
-        select(Problem).where(
-            Problem.playlist_id == problem.playlist_id,
-            Problem.position == problem.position + 1,
+    next_membership = db.scalar(
+        select(PlaylistProblem).where(
+            PlaylistProblem.playlist_id == membership.playlist_id,
+            PlaylistProblem.position == membership.position + 1,
         )
     )
 
-    def navigation(problem_record: Problem | None):
-        if problem_record is None:
+    def navigation(membership_record: PlaylistProblem | None):
+        if membership_record is None:
             return None
         return ProblemNavigationResponse(
-            id=problem_record.id,
-            title=problem_record.title,
-            position=problem_record.position,
+            id=membership_record.problem.id,
+            title=membership_record.problem.title,
+            position=membership_record.position,
         )
 
     return ProblemDetailResponse(
         id=problem.id,
-        playlist_id=problem.playlist_id,
+        playlist_id=membership.playlist_id,
         leetcode_id=problem.leetcode_id,
         title=problem.title,
         leetcode_url=problem.leetcode_url,
         difficulty=problem.difficulty,
-        acceptance_rate=problem.acceptance_rate,
-        frequency=problem.frequency,
+        acceptance_rate=membership.acceptance_rate,
+        frequency=membership.frequency,
         is_premium=problem.is_premium,
-        position=problem.position,
-        playlist_name=problem.playlist.name,
-        playlist_slug=problem.playlist.slug,
-        company_name=problem.playlist.company_name,
-        previous_problem=navigation(previous_problem),
-        next_problem=navigation(next_problem),
+        position=membership.position,
+        playlist_name=membership.playlist.name,
+        playlist_slug=membership.playlist.slug,
+        company_name=membership.playlist.company_name,
+        execution_spec=(
+            ExecutionSpecResponse(
+                id=problem.execution_spec.id,
+                problem_id=problem.execution_spec.problem_id,
+                language=problem.execution_spec.language,
+                execution_type=problem.execution_spec.execution_type,
+                function_name=problem.execution_spec.function_name,
+                starter_code=problem.execution_spec.starter_code,
+                input_format=problem.execution_spec.input_format,
+                output_format=problem.execution_spec.output_format,
+                output_comparison=problem.execution_spec.output_comparison,
+                created_at=problem.execution_spec.created_at,
+                updated_at=problem.execution_spec.updated_at,
+            )
+            if problem.execution_spec else None
+        ),
+        previous_problem=navigation(previous_membership),
+        next_problem=navigation(next_membership),
     )
 
 

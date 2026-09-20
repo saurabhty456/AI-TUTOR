@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import time
+import json
 from dataclasses import dataclass
 
 from app.code_execution import CodeExecutor, ExecutionResult
-from app.models import ProblemTestCase
+from app.models import ProblemExecutionSpec, ProblemTestCase
 
 
 @dataclass(frozen=True)
@@ -31,13 +32,27 @@ def normalize_output(value: str) -> str:
     return "\n".join(line.rstrip() for line in value.strip().splitlines())
 
 
-def build_harness(code: str) -> str:
+def outputs_match(actual: str, expected: str, comparison: str) -> bool:
+    if comparison == "exact_json":
+        try:
+            return json.loads(actual) == json.loads(expected)
+        except json.JSONDecodeError:
+            return False
+    return normalize_output(actual) == normalize_output(expected)
+
+
+def build_harness(code: str, execution_spec: ProblemExecutionSpec) -> str:
+    if execution_spec.execution_type == "stdin_stdout":
+        return code
+    function_name = execution_spec.function_name
+    if not function_name:
+        raise ValueError("Function execution requires execution_spec.function_name.")
     return f"""{code}
 
 import json as _codetutor_json
 
 _codetutor_payload = _codetutor_json.loads(input())
-_codetutor_result = solution(
+_codetutor_result = {function_name}(
     *_codetutor_payload.get("args", []),
     **_codetutor_payload.get("kwargs", {{}}),
 )
@@ -49,6 +64,7 @@ def judge_submission(
     executor: CodeExecutor,
     code: str,
     language: str,
+    execution_spec: ProblemExecutionSpec,
     test_cases: list[ProblemTestCase],
 ) -> JudgeResult:
     started_at = time.perf_counter()
@@ -57,7 +73,7 @@ def judge_submission(
 
     for test_case in test_cases:
         execution: ExecutionResult = executor.run(
-            build_harness(code),
+            build_harness(code, execution_spec),
             language,
             stdin=f"{test_case.input_data}\n",
         )
@@ -90,7 +106,7 @@ def judge_submission(
             )
             return JudgeResult("runtime_error", passed_count, len(test_cases), _elapsed_ms(started_at), results)
 
-        passed = normalize_output(execution.stdout) == normalize_output(test_case.expected_output)
+        passed = outputs_match(execution.stdout, test_case.expected_output, execution_spec.output_comparison)
         if passed:
             passed_count += 1
 
@@ -110,6 +126,16 @@ def judge_submission(
             return JudgeResult("wrong_answer", passed_count, len(test_cases), _elapsed_ms(started_at), results)
 
     return JudgeResult("accepted", passed_count, len(test_cases), _elapsed_ms(started_at), results)
+
+
+def run_problem_code(
+    executor: CodeExecutor,
+    code: str,
+    language: str,
+    execution_spec: ProblemExecutionSpec,
+    input_data: str,
+) -> ExecutionResult:
+    return executor.run(build_harness(code, execution_spec), language, stdin=f"{input_data}\n")
 
 
 def _elapsed_ms(started_at: float) -> int:

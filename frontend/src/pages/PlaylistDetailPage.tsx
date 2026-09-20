@@ -94,6 +94,7 @@ export default function PlaylistDetailPage() {
                     {problem.difficulty}
                   </span>
                   <span className="problem-row__frequency">Frequency <strong>{problem.frequency}%</strong></span>
+                  <span className="problem-row__frequency">Acceptance <strong>{problem.acceptance_rate}%</strong></span>
                   {problem.is_premium ? <span className="premium-badge">Premium</span> : null}
                   {showProgress ? (
                     <span className={`problem-row__status problem-row__status--${problemProgress[problem.id]?.solved ? "solved" : problemProgress[problem.id]?.attempted ? "attempted" : "unattempted"}`}>

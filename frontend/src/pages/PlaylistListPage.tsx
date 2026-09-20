@@ -47,7 +47,7 @@ export default function PlaylistListPage() {
         {!loading && !error ? (
           <section className="playlist-grid" aria-label="Company playlists">
             {playlists.map((playlist) => (
-              <article className="playlist-card" key={playlist.id}>
+              <Link to={`/playlists/${playlist.slug}`} className="playlist-card" key={playlist.id}>
                 <div className="playlist-card__mark">{playlist.company_name.slice(0, 1)}</div>
                 <div className="playlist-card__body">
                   <span className="playlist-card__label">{playlist.company_name}</span>
@@ -55,13 +55,12 @@ export default function PlaylistListPage() {
                   <p>{playlist.description}</p>
                   <div className="playlist-card__footer">
                     <span>{playlist.total_problems} Problems</span>
-                    <Link to={`/playlists/${playlist.slug}`} className="ct-btn ct-btn--primary">
-                      Open playlist <span aria-hidden="true">→</span>
-                    </Link>
+                    <span className="ct-btn ct-btn--primary">Open playlist <span aria-hidden="true">→</span></span>
                   </div>
                 </div>
-              </article>
+              </Link>
             ))}
+            {!playlists.length ? <p className="playlist-state">No company playlists are available yet.</p> : null}
           </section>
         ) : null}
       </main>
