@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db, initialize_database
-from app.models import Playlist, Problem, QuizResult, User
+from app.models import Playlist, PlaylistProblem, Problem, QuizResult, User
 
 
 # =========================================================
@@ -381,7 +381,7 @@ class ProblemResponse(BaseModel):
     difficulty: str
     acceptance_rate: float
     frequency: float
-    is_premium: bool
+    is_premium: bool | None
     position: int
 
 
@@ -424,7 +424,7 @@ def get_playlists(db: Session = Depends(get_db)):
             slug=playlist.slug,
             company_name=playlist.company_name,
             description=playlist.description,
-            total_problems=len(playlist.problems),
+            total_problems=len(playlist.problem_links),
         )
         for playlist in playlists
     ]
@@ -442,67 +442,83 @@ def get_playlist(slug: str, db: Session = Depends(get_db)):
         slug=playlist.slug,
         company_name=playlist.company_name,
         description=playlist.description,
-        total_problems=len(playlist.problems),
+        total_problems=len(playlist.problem_links),
         problems=[
             ProblemResponse(
-                id=problem.id,
-                playlist_id=problem.playlist_id,
-                leetcode_id=problem.leetcode_id,
-                title=problem.title,
-                leetcode_url=problem.leetcode_url,
-                difficulty=problem.difficulty,
-                acceptance_rate=problem.acceptance_rate,
-                frequency=problem.frequency,
-                is_premium=problem.is_premium,
-                position=problem.position,
+                id=link.problem.id,
+                playlist_id=playlist.id,
+                leetcode_id=link.problem.leetcode_id,
+                title=link.problem.title,
+                leetcode_url=link.problem.leetcode_url,
+                difficulty=link.problem.difficulty,
+                acceptance_rate=link.acceptance_rate,
+                frequency=link.frequency,
+                is_premium=link.problem.is_premium,
+                position=link.position,
             )
-            for problem in playlist.problems
+            for link in playlist.problem_links
         ],
     )
 
 
 @app.get("/problems/{problem_id}", response_model=ProblemDetailResponse)
-def get_problem(problem_id: int, db: Session = Depends(get_db)):
+def get_problem(
+    problem_id: int,
+    playlist_slug: str | None = None,
+    db: Session = Depends(get_db),
+):
     problem = db.scalar(select(Problem).where(Problem.id == problem_id))
     if problem is None:
         raise HTTPException(status_code=404, detail="Problem not found.")
 
+    membership_query = select(PlaylistProblem).where(
+        PlaylistProblem.problem_id == problem.id
+    )
+    if playlist_slug is not None:
+        membership_query = membership_query.join(Playlist).where(Playlist.slug == playlist_slug)
+    membership = db.scalars(
+        membership_query.order_by(PlaylistProblem.playlist_id, PlaylistProblem.position)
+    ).first()
+    if membership is None:
+        raise HTTPException(status_code=404, detail="Problem is not in that playlist.")
+
+    playlist = membership.playlist
     previous_problem = db.scalar(
-        select(Problem).where(
-            Problem.playlist_id == problem.playlist_id,
-            Problem.position == problem.position - 1,
+        select(PlaylistProblem).where(
+            PlaylistProblem.playlist_id == membership.playlist_id,
+            PlaylistProblem.position == membership.position - 1,
         )
     )
     next_problem = db.scalar(
-        select(Problem).where(
-            Problem.playlist_id == problem.playlist_id,
-            Problem.position == problem.position + 1,
+        select(PlaylistProblem).where(
+            PlaylistProblem.playlist_id == membership.playlist_id,
+            PlaylistProblem.position == membership.position + 1,
         )
     )
 
-    def navigation(problem_record: Problem | None):
-        if problem_record is None:
+    def navigation(problem_link: PlaylistProblem | None):
+        if problem_link is None:
             return None
         return ProblemNavigationResponse(
-            id=problem_record.id,
-            title=problem_record.title,
-            position=problem_record.position,
+            id=problem_link.problem.id,
+            title=problem_link.problem.title,
+            position=problem_link.position,
         )
 
     return ProblemDetailResponse(
         id=problem.id,
-        playlist_id=problem.playlist_id,
+        playlist_id=membership.playlist_id,
         leetcode_id=problem.leetcode_id,
         title=problem.title,
         leetcode_url=problem.leetcode_url,
         difficulty=problem.difficulty,
-        acceptance_rate=problem.acceptance_rate,
-        frequency=problem.frequency,
+        acceptance_rate=membership.acceptance_rate,
+        frequency=membership.frequency,
         is_premium=problem.is_premium,
-        position=problem.position,
-        playlist_name=problem.playlist.name,
-        playlist_slug=problem.playlist.slug,
-        company_name=problem.playlist.company_name,
+        position=membership.position,
+        playlist_name=playlist.name,
+        playlist_slug=playlist.slug,
+        company_name=playlist.company_name,
         previous_problem=navigation(previous_problem),
         next_problem=navigation(next_problem),
     )

@@ -15,11 +15,12 @@ type Problem = {
   difficulty: string;
   acceptance_rate: number;
   frequency: number;
-  is_premium: boolean;
+  is_premium: boolean | null;
   position: number;
 };
 
 type Playlist = {
+  slug: string;
   name: string;
   company_name: string;
   description: string;
@@ -65,18 +66,30 @@ export default function PlaylistDetailPage() {
 
             <section className="problem-list" aria-label={`${playlist.name} problems`}>
               {playlist.problems.map((problem) => (
-                <Link to={`/problems/${problem.id}`} className="problem-row" key={problem.id}>
+                <article className="problem-row" key={problem.id}>
                   <span className="problem-row__number">{String(problem.position).padStart(2, "0")}</span>
-                  <div className="problem-row__title">
+                  <Link
+                    to={`/problems/${problem.id}?playlist_slug=${encodeURIComponent(playlist.slug)}`}
+                    className="problem-row__title"
+                  >
                     <h2>{problem.title}</h2>
                     <span>LeetCode #{problem.leetcode_id}</span>
-                  </div>
-                  <span className={`difficulty difficulty--${problem.difficulty.toLowerCase()}`}>
+                  </Link>
+                  <span className={`difficulty problem-row__difficulty difficulty--${problem.difficulty.toLowerCase()}`}>
                     {problem.difficulty}
                   </span>
+                  <span className="problem-row__acceptance">Acceptance <strong>{problem.acceptance_rate}%</strong></span>
                   <span className="problem-row__frequency">Frequency <strong>{problem.frequency}%</strong></span>
                   {problem.is_premium ? <span className="premium-badge">Premium</span> : null}
-                </Link>
+                  <a
+                    href={problem.leetcode_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="problem-row__solve"
+                  >
+                    Solve on LeetCode <span aria-hidden="true">↗</span>
+                  </a>
+                </article>
               ))}
             </section>
           </>

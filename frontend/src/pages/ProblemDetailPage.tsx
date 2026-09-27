@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import "../styles/landing.css";
@@ -22,7 +22,7 @@ type Problem = {
   difficulty: string;
   acceptance_rate: number;
   frequency: number;
-  is_premium: boolean;
+  is_premium: boolean | null;
   position: number;
   playlist_name: string;
   playlist_slug: string;
@@ -33,6 +33,8 @@ type Problem = {
 
 export default function ProblemDetailPage() {
   const { problemId } = useParams();
+  const [searchParams] = useSearchParams();
+  const playlistSlug = searchParams.get("playlist_slug");
   const [problem, setProblem] = useState<Problem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -42,7 +44,10 @@ export default function ProblemDetailPage() {
 
     setLoading(true);
     setError("");
-    fetch(`${API_BASE}/problems/${problemId}`)
+    const playlistQuery = playlistSlug
+      ? `?playlist_slug=${encodeURIComponent(playlistSlug)}`
+      : "";
+    fetch(`${API_BASE}/problems/${problemId}${playlistQuery}`)
       .then(async (response) => {
         if (!response.ok) throw new Error("Unable to load problem.");
         return (await response.json()) as Problem;
@@ -50,7 +55,7 @@ export default function ProblemDetailPage() {
       .then(setProblem)
       .catch(() => setError("This problem is temporarily unavailable."))
       .finally(() => setLoading(false));
-  }, [problemId]);
+  }, [problemId, playlistSlug]);
 
   return (
     <div className="ct-page problem-detail-page">
@@ -86,12 +91,9 @@ export default function ProblemDetailPage() {
 
             <section className="problem-detail-practice" aria-labelledby="practice-heading">
               <div>
-                <span className="problem-detail-eyebrow">Practice workspace</span>
-                <h2 id="practice-heading">Build your solution here next.</h2>
-                <p>
-                  The CodeTutor editor, hints, and code execution tools will be added in the next phase.
-                  For now, use the metadata above to choose your next practice problem.
-                </p>
+                <span className="problem-detail-eyebrow">Practice</span>
+                <h2 id="practice-heading">Continue on LeetCode</h2>
+                <p>Open the original problem on LeetCode to read the statement and practice.</p>
               </div>
               <a
                 href={problem.leetcode_url}
@@ -99,20 +101,26 @@ export default function ProblemDetailPage() {
                 rel="noopener noreferrer"
                 className="problem-detail-link"
               >
-                Open on LeetCode <span aria-hidden="true">↗</span>
+                Solve on LeetCode <span aria-hidden="true">↗</span>
               </a>
             </section>
 
             <nav className="problem-detail-navigation" aria-label="Problem navigation">
               {problem.previous_problem ? (
-                <Link to={`/problems/${problem.previous_problem.id}`} className="problem-detail-nav-card">
+                <Link
+                  to={`/problems/${problem.previous_problem.id}?playlist_slug=${encodeURIComponent(problem.playlist_slug)}`}
+                  className="problem-detail-nav-card"
+                >
                   <span>← Previous problem</span>
                   <strong>{problem.previous_problem.title}</strong>
                   <small>Problem {String(problem.previous_problem.position).padStart(2, "0")}</small>
                 </Link>
               ) : <span />}
               {problem.next_problem ? (
-                <Link to={`/problems/${problem.next_problem.id}`} className="problem-detail-nav-card problem-detail-nav-card--next">
+                <Link
+                  to={`/problems/${problem.next_problem.id}?playlist_slug=${encodeURIComponent(problem.playlist_slug)}`}
+                  className="problem-detail-nav-card problem-detail-nav-card--next"
+                >
                   <span>Next problem →</span>
                   <strong>{problem.next_problem.title}</strong>
                   <small>Problem {String(problem.next_problem.position).padStart(2, "0")}</small>

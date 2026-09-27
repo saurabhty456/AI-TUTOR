@@ -59,11 +59,20 @@
 .playlist-total { display: grid; min-width: 112px; color: var(--ct-accent-hover); font: 600 42px var(--ct-font-display); text-align: right; }
 .playlist-total small { color: var(--ct-text-muted); font: 500 12px var(--ct-font-mono); text-transform: uppercase; letter-spacing: 0.08em; }
 .problem-list { border-top: 1px solid var(--ct-border); }
-.problem-row { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto auto auto; align-items: center; gap: 22px; padding: 22px 8px; border-bottom: 1px solid var(--ct-border); color: inherit; text-decoration: none; }
+.problem-row { display: grid; grid-template-columns: 42px minmax(180px, 1fr) auto auto auto auto auto; grid-template-areas: "number title difficulty acceptance frequency premium solve"; align-items: center; gap: 18px; padding: 20px 8px; border-bottom: 1px solid var(--ct-border); }
 .problem-row__number { color: var(--ct-text-muted); font: 500 14px var(--ct-font-mono); }
+.problem-row__number { grid-area: number; }
+.problem-row__title { grid-area: title; min-width: 0; color: inherit; text-decoration: none; }
+.problem-row__title:hover h2 { color: var(--ct-accent-hover); }
 .problem-row__title h2 { margin: 0 0 5px; color: var(--ct-text-primary); font: 600 16px var(--ct-font-display); }
-.problem-row__title span, .problem-row__frequency { color: var(--ct-text-muted); font-size: 12px; }
-.problem-row__frequency strong { color: var(--ct-text-secondary); font-weight: 600; }
+.problem-row__title span, .problem-row__acceptance, .problem-row__frequency { color: var(--ct-text-muted); font-size: 12px; }
+.problem-row__difficulty { grid-area: difficulty; }
+.problem-row__acceptance { grid-area: acceptance; white-space: nowrap; }
+.problem-row__frequency { grid-area: frequency; white-space: nowrap; }
+.problem-row__acceptance strong, .problem-row__frequency strong { color: var(--ct-text-secondary); font-weight: 600; }
+.premium-badge { grid-area: premium; }
+.problem-row__solve { grid-area: solve; padding: 9px 11px; border: 1px solid var(--ct-border); border-radius: 5px; color: var(--ct-accent-hover); font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.problem-row__solve:hover { border-color: var(--ct-accent); color: var(--ct-text-primary); }
 .difficulty, .premium-badge { padding: 6px 9px; border-radius: 5px; font: 600 11px var(--ct-font-mono); }
 .difficulty--easy { color: #35c98a; background: rgba(53, 201, 138, 0.1); }
 .difficulty--medium { color: #f5bd60; background: rgba(245, 189, 96, 0.1); }
@@ -76,7 +85,6 @@
   .playlist-card__footer, .playlist-detail-head { align-items: flex-start; flex-direction: column; }
   .playlist-detail-head { padding: 48px 0 34px; }
   .playlist-total { text-align: left; }
-  .problem-row { grid-template-columns: 38px minmax(0, 1fr) auto; gap: 12px; }
-  .problem-row__frequency { grid-column: 2; }
-  .premium-badge { grid-column: 3; grid-row: 2; }
+  .problem-row { grid-template-columns: 38px minmax(0, 1fr) auto; grid-template-areas: "number title title" ". difficulty acceptance" ". frequency premium" ". solve solve"; gap: 12px; }
+  .problem-row__solve { justify-self: start; }
 }
