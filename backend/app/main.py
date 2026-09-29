@@ -4,22 +4,38 @@ import re
 import base64
 import hashlib
 import hmac
+import random
+import re
 import secrets
 import time
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
-from sqlalchemy import select
+from sqlalchemy import create_engine, func, select, text as sql_text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import NullPool
 
 from app.database import get_db, initialize_database
-from app.models import Playlist, PlaylistProblem, Problem, QuizResult, User
+from app.interview_content import SQL_QUESTION_BANK, SYSTEM_DESIGN_QUESTIONS
+from app.models import (
+    Interview,
+    InterviewAnswer,
+    InterviewQuestion,
+    InterviewResult,
+    Playlist,
+    PlaylistProblem,
+    Problem,
+    QuizResult,
+    User,
+)
 
 
 # =========================================================
@@ -363,6 +379,30 @@ class QuizResultResponse(BaseModel):
     completed_at: datetime
 
 
+class InterviewAnswerInput(BaseModel):
+    question_id: int
+    answer_text: str = Field(default="", max_length=20000)
+    self_reported_result: str | None = Field(default=None, max_length=50)
+
+
+class InterviewAnswersRequest(BaseModel):
+    answers: list[InterviewAnswerInput] = Field(max_length=4)
+
+
+class SQLExecutionRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=20000)
+
+
+class InterviewEvaluation(BaseModel):
+    overall_score: float = Field(ge=0, le=100)
+    dsa_feedback: str
+    sql_feedback: str
+    system_design_feedback: str
+    strengths: list[str]
+    improvements: list[str]
+    final_feedback: str
+
+
 class PlaylistSummaryResponse(BaseModel):
     id: int
     name: str
@@ -600,6 +640,469 @@ def login(request: AuthLoginRequest, db: Session = Depends(get_db)):
 @app.get("/auth/me", response_model=AuthUser)
 def me(user: AuthUser = Depends(current_user)):
     return user
+
+
+# =========================================================
+# INTERVIEW PREPARATION
+# =========================================================
+
+def _load_interview(db: Session, interview_id: int, user_id: int) -> Interview:
+    interview = db.scalar(
+        select(Interview).where(
+            Interview.id == interview_id,
+            Interview.user_id == user_id,
+        )
+    )
+    if interview is None:
+        raise HTTPException(status_code=404, detail="Interview not found.")
+    return interview
+
+
+def _public_question_details(question: InterviewQuestion) -> dict:
+    details = json.loads(question.details_json)
+    if question.kind != "sql":
+        return details
+    return {
+        "difficulty": details["difficulty"],
+        "dialect": "PostgreSQL",
+        "tables": [
+            {
+                "name": table["name"],
+                "columns": table["columns"],
+                "sample_rows": table["visible"],
+            }
+            for table in details["tables"]
+        ],
+        "expected_output": details["expected_visible"],
+        "execution_enabled": bool(os.getenv("INTERVIEW_SANDBOX_DATABASE_URL")),
+    }
+
+
+def _serialize_interview(interview: Interview) -> dict:
+    return {
+        "id": interview.id,
+        "status": interview.status,
+        "created_at": interview.created_at.isoformat(),
+        "completed_at": interview.completed_at.isoformat() if interview.completed_at else None,
+        "questions": [
+            {
+                "id": question.id,
+                "position": question.position,
+                "kind": question.kind,
+                "prompt": question.prompt,
+                "details": _public_question_details(question),
+                "answer": {
+                    "answer_text": question.answer.answer_text,
+                    "self_reported_result": question.answer.self_reported_result,
+                    "sql_execution": json.loads(question.answer.execution_json)
+                    if question.answer.execution_json
+                    else None,
+                }
+                if question.answer
+                else None,
+            }
+            for question in interview.questions
+        ],
+    }
+
+
+def _save_interview_answers(
+    db: Session,
+    interview: Interview,
+    answers: list[InterviewAnswerInput],
+) -> None:
+    questions_by_id = {question.id: question for question in interview.questions}
+    if len({answer.question_id for answer in answers}) != len(answers):
+        raise HTTPException(status_code=400, detail="Each question can be answered only once.")
+    for item in answers:
+        question = questions_by_id.get(item.question_id)
+        if question is None:
+            raise HTTPException(status_code=400, detail="An answer does not belong to this interview.")
+        answer = question.answer
+        if answer is None:
+            answer = InterviewAnswer(question_id=question.id)
+            db.add(answer)
+            question.answer = answer
+        answer.answer_text = item.answer_text.strip()
+        if item.self_reported_result is not None and item.self_reported_result not in {
+            "Solved",
+            "Partially solved",
+            "Could not solve",
+        }:
+            raise HTTPException(status_code=400, detail="Choose a valid self-reported result.")
+        answer.self_reported_result = item.self_reported_result
+    db.commit()
+
+
+def _same_database(first_url: str, second_url: str) -> bool:
+    first = make_url(first_url)
+    second = make_url(second_url)
+    return (
+        (first.host or "localhost").lower(),
+        first.port or 5432,
+        first.database,
+    ) == (
+        (second.host or "localhost").lower(),
+        second.port or 5432,
+        second.database,
+    )
+
+
+def _normalized_sql_value(value):
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return value
+
+
+def _canonical_rows(rows: list[dict]) -> list[str]:
+    return sorted(
+        json.dumps(row, sort_keys=True, separators=(",", ":"), default=str)
+        for row in rows
+    )
+
+
+def _run_sql_fixture(sandbox_url: str, tables: list[dict], fixture: str, query: str) -> list[dict]:
+    engine = create_engine(sandbox_url, poolclass=NullPool, connect_args={"connect_timeout": 5})
+    try:
+        with engine.connect() as connection:
+            with connection.begin():
+                for table in tables:
+                    name = table["name"]
+                    if not re.fullmatch(r"[a-z_][a-z0-9_]*", name):
+                        raise RuntimeError("Invalid sandbox fixture table name.")
+                    columns = table["columns"]
+                    definitions = []
+                    for column_name, column_type in columns:
+                        if not re.fullmatch(r"[a-z_][a-z0-9_]*", column_name):
+                            raise RuntimeError("Invalid sandbox fixture column name.")
+                        if column_type not in {"INTEGER", "TEXT", "NUMERIC", "DATE"}:
+                            raise RuntimeError("Invalid sandbox fixture column type.")
+                        definitions.append(f'"{column_name}" {column_type}')
+                    connection.exec_driver_sql(
+                        f'CREATE TEMPORARY TABLE "{name}" ({", ".join(definitions)}) '
+                        "ON COMMIT PRESERVE ROWS"
+                    )
+                    fixture_rows = table[fixture]
+                    if fixture_rows:
+                        column_names = [column[0] for column in columns]
+                        bind_names = [f"v{index}" for index in range(len(columns))]
+                        placeholders = ", ".join(f":{name}" for name in bind_names)
+                        quoted_columns = ", ".join(f'"{name}"' for name in column_names)
+                        insert_sql = (
+                            f'INSERT INTO "{name}" '
+                            f"({quoted_columns}) "
+                            f"VALUES ({placeholders})"
+                        )
+                        connection.execute(
+                            sql_text(insert_sql),
+                            [dict(zip(bind_names, row)) for row in fixture_rows],
+                        )
+            with connection.begin():
+                connection.exec_driver_sql("SET TRANSACTION READ ONLY")
+                connection.exec_driver_sql("SET LOCAL statement_timeout = '2500ms'")
+                connection.exec_driver_sql("SET LOCAL lock_timeout = '500ms'")
+                result = connection.exec_driver_sql(query)
+                return [
+                    {key: _normalized_sql_value(value) for key, value in row._mapping.items()}
+                    for row in result
+                ]
+    finally:
+        engine.dispose()
+
+
+def _store_sql_execution(answer: InterviewAnswer, execution: dict) -> None:
+    answer.answer_text = execution.get("query", answer.answer_text)
+    answer.execution_json = json.dumps(execution, default=str)
+
+
+@app.post("/interviews/start")
+def start_interview(
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    problems = db.scalars(
+        select(Problem)
+        .where(Problem.difficulty.in_(["Medium", "Hard"]))
+        .order_by(func.random())
+        .limit(2)
+    ).all()
+    if len(problems) < 2:
+        problems = db.scalars(select(Problem).order_by(func.random()).limit(2)).all()
+    if len(problems) < 2:
+        raise HTTPException(status_code=503, detail="At least two DSA problems are required to start an interview.")
+
+    sql_question = random.choice(SQL_QUESTION_BANK)
+    interview = Interview(user_id=user.id)
+    interview.questions = [
+        InterviewQuestion(
+            position=1,
+            kind="dsa",
+            prompt="Explain your approach, correctness, and time and space complexity.",
+            details_json=json.dumps({
+                "title": problems[0].title,
+                "difficulty": problems[0].difficulty,
+                "leetcode_url": problems[0].leetcode_url,
+            }),
+        ),
+        InterviewQuestion(
+            position=2,
+            kind="dsa",
+            prompt="Explain your approach, correctness, and time and space complexity.",
+            details_json=json.dumps({
+                "title": problems[1].title,
+                "difficulty": problems[1].difficulty,
+                "leetcode_url": problems[1].leetcode_url,
+            }),
+        ),
+        InterviewQuestion(
+            position=3,
+            kind="sql",
+            prompt=sql_question["prompt"],
+            details_json=json.dumps({**sql_question, "difficulty": "Medium / Hard"}),
+        ),
+        InterviewQuestion(
+            position=4,
+            kind="system_design",
+            prompt=random.choice(SYSTEM_DESIGN_QUESTIONS),
+            details_json="{}",
+        ),
+    ]
+    db.add(interview)
+    db.commit()
+    db.refresh(interview)
+    return _serialize_interview(interview)
+
+
+@app.get("/interviews/history")
+def get_interview_history(
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    interviews = db.scalars(
+        select(Interview)
+        .where(Interview.user_id == user.id)
+        .order_by(Interview.created_at.desc())
+    ).all()
+    return [
+        {
+            "id": interview.id,
+            "status": interview.status,
+            "created_at": interview.created_at.isoformat(),
+            "completed_at": interview.completed_at.isoformat() if interview.completed_at else None,
+            "overall_score": interview.result.overall_score if interview.result else None,
+        }
+        for interview in interviews
+    ]
+
+
+@app.get("/interviews/{interview_id}")
+def get_interview(
+    interview_id: int,
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    interview = _load_interview(db, interview_id, user.id)
+    return _serialize_interview(interview)
+
+
+@app.post("/interviews/{interview_id}/answers")
+def save_interview_answers(
+    interview_id: int,
+    request: InterviewAnswersRequest,
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    interview = _load_interview(db, interview_id, user.id)
+    if interview.status == "completed":
+        raise HTTPException(status_code=409, detail="A completed interview cannot be changed.")
+    _save_interview_answers(db, interview, request.answers)
+    return {"saved": True}
+
+
+@app.post("/interviews/{interview_id}/questions/{question_id}/execute-sql")
+def execute_interview_sql(
+    interview_id: int,
+    question_id: int,
+    request: SQLExecutionRequest,
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    interview = _load_interview(db, interview_id, user.id)
+    if interview.status == "completed":
+        raise HTTPException(status_code=409, detail="A completed interview cannot be changed.")
+    question = next((item for item in interview.questions if item.id == question_id), None)
+    if question is None or question.kind != "sql":
+        raise HTTPException(status_code=404, detail="SQL question not found.")
+    sandbox_url = os.getenv("INTERVIEW_SANDBOX_DATABASE_URL")
+    if not sandbox_url:
+        raise HTTPException(
+            status_code=503,
+            detail="SQL execution is unavailable until an isolated INTERVIEW_SANDBOX_DATABASE_URL is configured.",
+        )
+    if _same_database(sandbox_url, os.environ["DATABASE_URL"]):
+        raise HTTPException(status_code=503, detail="The SQL sandbox must use a separate database from the application.")
+
+    query = request.query.strip()
+    statement = query[:-1].rstrip() if query.endswith(";") else query
+    if ";" in statement or not re.match(r"(?is)^(select|with)\b", statement):
+        raise HTTPException(status_code=400, detail="Run exactly one SELECT or WITH query.")
+    details = json.loads(question.details_json)
+    try:
+        visible_output = _run_sql_fixture(sandbox_url, details["tables"], "visible", statement)
+        hidden_output = _run_sql_fixture(sandbox_url, details["tables"], "hidden", statement)
+        visible_passed = _canonical_rows(visible_output) == _canonical_rows(details["expected_visible"])
+        hidden_passed = _canonical_rows(hidden_output) == _canonical_rows(details["expected_hidden"])
+        execution = {
+            "query": statement,
+            "correct": visible_passed and hidden_passed,
+            "visible_passed": visible_passed,
+            "hidden_passed": hidden_passed,
+            "hidden_tests_total": 1,
+            "visible_output": visible_output,
+            "error": None,
+        }
+    except Exception as error:
+        if hasattr(error, "orig") and error.orig is not None:
+            message = str(error.orig)
+        else:
+            message = str(error)
+        execution = {
+            "query": statement,
+            "correct": False,
+            "visible_passed": False,
+            "hidden_passed": False,
+            "hidden_tests_total": 1,
+            "visible_output": [],
+            "error": message[:1000],
+        }
+
+    answer = question.answer
+    if answer is None:
+        answer = InterviewAnswer(question_id=question.id)
+        db.add(answer)
+        question.answer = answer
+    _store_sql_execution(answer, execution)
+    db.commit()
+    return {key: value for key, value in execution.items() if key != "query"}
+
+
+@app.post("/interviews/{interview_id}/evaluate")
+def evaluate_interview(
+    interview_id: int,
+    request: InterviewAnswersRequest,
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    interview = _load_interview(db, interview_id, user.id)
+    if interview.result:
+        return _serialize_interview_result(interview)
+    if len(request.answers) != 4:
+        raise HTTPException(status_code=400, detail="Submit all four interview answers before evaluation.")
+    _save_interview_answers(db, interview, request.answers)
+
+    answer_context = []
+    for question in interview.questions:
+        answer = question.answer
+        answer_context.append({
+            "position": question.position,
+            "type": question.kind,
+            "prompt": question.prompt,
+            "details": _public_question_details(question),
+            "answer": answer.answer_text if answer else "",
+            "self_reported_result": answer.self_reported_result if answer else None,
+            "sql_execution": json.loads(answer.execution_json)
+            if answer and answer.execution_json
+            else None,
+        })
+    evaluation_prompt = (
+        "Evaluate this complete technical interview fairly and constructively. "
+        "Do not claim DSA code was executed; DSA answers are explanations and self-reports. "
+        "For SQL, weigh actual visible and hidden test results heavily when available; "
+        "if execution was unavailable, say so and evaluate the written query cautiously. "
+        "Assess system design requirements, architecture, APIs, database choice, scalability, "
+        "caching, reliability/failure handling, and trade-offs. Return concise specific feedback.\n\n"
+        + json.dumps(answer_context, ensure_ascii=False)
+    )
+    try:
+        response = client.models.generate_content(
+            model="gemini-3.6-flash",
+            contents=evaluation_prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=InterviewEvaluation,
+                temperature=0.2,
+                max_output_tokens=2500,
+            ),
+        )
+        if response.parsed is not None:
+            evaluation = InterviewEvaluation.model_validate(response.parsed)
+        else:
+            evaluation = InterviewEvaluation.model_validate(json.loads(response.text or "{}"))
+    except Exception as error:
+        print("Interview evaluation error:", error)
+        raise HTTPException(status_code=502, detail="AI evaluation could not be completed. Your answers have been saved; please try again.")
+
+    result = InterviewResult(
+        overall_score=round(evaluation.overall_score, 1),
+        dsa_feedback=evaluation.dsa_feedback,
+        sql_feedback=evaluation.sql_feedback,
+        system_design_feedback=evaluation.system_design_feedback,
+        strengths_json=json.dumps(evaluation.strengths),
+        improvements_json=json.dumps(evaluation.improvements),
+        final_feedback=evaluation.final_feedback,
+    )
+    interview.result = result
+    interview.status = "completed"
+    interview.completed_at = datetime.now(timezone.utc)
+    db.add(result)
+    db.commit()
+    return _serialize_interview_result(interview)
+
+
+def _serialize_interview_result(interview: Interview) -> dict:
+    result = interview.result
+    if result is None:
+        raise HTTPException(status_code=404, detail="Interview result not found.")
+    return {
+        "interview_id": interview.id,
+        "overall_score": result.overall_score,
+        "dsa_feedback": result.dsa_feedback,
+        "sql_feedback": result.sql_feedback,
+        "system_design_feedback": result.system_design_feedback,
+        "strengths": json.loads(result.strengths_json),
+        "improvements": json.loads(result.improvements_json),
+        "final_feedback": result.final_feedback,
+        "evaluated_at": result.evaluated_at.isoformat(),
+        "ai_generated": True,
+        "questions": [
+            {
+                "position": question.position,
+                "kind": question.kind,
+                "prompt": question.prompt,
+                "title": json.loads(question.details_json).get("title"),
+                "answer_text": question.answer.answer_text if question.answer else "",
+                "self_reported_result": question.answer.self_reported_result
+                if question.answer
+                else None,
+                "sql_execution": json.loads(question.answer.execution_json)
+                if question.answer and question.answer.execution_json
+                else None,
+            }
+            for question in interview.questions
+        ],
+    }
+
+
+@app.get("/interviews/{interview_id}/result")
+def get_interview_result(
+    interview_id: int,
+    user: AuthUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    interview = _load_interview(db, interview_id, user.id)
+    return _serialize_interview_result(interview)
 
 
 # =========================================================

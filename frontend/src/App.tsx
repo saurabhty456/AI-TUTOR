@@ -14,6 +14,11 @@ import QuizPage from "./components/QuizPage";
 import PlaylistListPage from "./pages/PlaylistListPage";
 import PlaylistDetailPage from "./pages/PlaylistDetailPage";
 import ProblemDetailPage from "./pages/ProblemDetailPage";
+import InterviewPage, {
+  InterviewHistoryPage,
+  InterviewResultPage,
+  InterviewSessionPage,
+} from "./pages/InterviewPage";
 
 function App() {
   return (
@@ -27,6 +32,10 @@ function App() {
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/history" element={<HistoryPage />} />
+            <Route path="/interview" element={<InterviewPage />} />
+            <Route path="/interview/session/:interviewId" element={<InterviewSessionPage />} />
+            <Route path="/interview/history" element={<InterviewHistoryPage />} />
+            <Route path="/interview/result/:interviewId" element={<InterviewResultPage />} />
           </Route>
 
           <Route path="/chat" element={<ChatPage />} />

@@ -8,17 +8,25 @@ import "../components/auth.css";
 
 const API_BASE = "http://127.0.0.1:8000";
 
+type InterviewHistoryEntry = {
+  id: number;
+  status: string;
+  created_at: string;
+  completed_at: string | null;
+  overall_score: number | null;
+};
+
 export default function DashboardPage() {
   const { currentUser } = useAuth();
   const firstName = currentUser?.name.split(" ")[0] ?? "there";
   const [results, setResults] = useState<QuizHistoryEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => Boolean(localStorage.getItem(TOKEN_KEY)));
+  const [interviews, setInterviews] = useState<InterviewHistoryEntry[]>([]);
+  const [interviewsLoading, setInterviewsLoading] = useState(() => Boolean(localStorage.getItem(TOKEN_KEY)));
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) {
-      setLoading(false);
-      setResults([]);
       return;
     }
 
@@ -36,6 +44,23 @@ export default function DashboardPage() {
       .then((data) => setResults(Array.isArray(data) ? data : []))
       .catch(() => setResults([]))
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      return;
+    }
+    fetch(`${API_BASE}/interviews/history`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Unable to load interview history.");
+        return (await response.json()) as InterviewHistoryEntry[];
+      })
+      .then((data) => setInterviews(Array.isArray(data) ? data : []))
+      .catch(() => setInterviews([]))
+      .finally(() => setInterviewsLoading(false));
   }, []);
 
   const stats = useMemo(() => {
@@ -67,6 +92,13 @@ export default function DashboardPage() {
   }, [results]);
 
   const recentResults = results.slice(0, 4);
+  const completedInterviews = interviews.filter(
+    (interview) => interview.status === "completed" && interview.overall_score !== null
+  );
+  const interviewAverage = completedInterviews.length
+    ? completedInterviews.reduce((sum, interview) => sum + Number(interview.overall_score), 0) / completedInterviews.length
+    : 0;
+  const latestInterview = completedInterviews[0];
 
   const topicPerformance = useMemo(() => {
     const byTopic = new Map<
@@ -128,6 +160,11 @@ export default function DashboardPage() {
           <Link to="/chat" className="dashboard-action">
             <span className="dashboard-action__icon dashboard-action__icon--teal">&lt;/&gt;</span>
             <span><strong>Ask AI Tutor</strong><small>Work through a concept together</small></span>
+            <span aria-hidden="true">→</span>
+          </Link>
+          <Link to="/interview" className="dashboard-action dashboard-action--primary">
+            <span className="dashboard-action__icon dashboard-action__icon--teal">↗</span>
+            <span><strong>Practice an interview</strong><small>DSA, SQL, and system design</small></span>
             <span aria-hidden="true">→</span>
           </Link>
         </div>
@@ -214,6 +251,50 @@ export default function DashboardPage() {
             )}
           </section>
         </div>
+
+        <div className="dashboard-section-heading dashboard-interview-heading">
+          <div>
+            <span className="auth-eyebrow">Interview practice</span>
+            <h2>Your interview progress</h2>
+          </div>
+          <Link to="/interview/history" className="dashboard-history-link">Interview history</Link>
+        </div>
+        <div className="dashboard-stats dashboard-interview-stats">
+          <article className="dashboard-stat">
+            <span className="dashboard-stat__value">{interviewsLoading ? "--" : completedInterviews.length}</span>
+            <strong>Interviews completed</strong>
+            <small>Finished evaluations</small>
+          </article>
+          <article className="dashboard-stat">
+            <span className="dashboard-stat__value">{interviewsLoading || !completedInterviews.length ? interviewsLoading ? "--" : "0%" : `${Math.round(interviewAverage)}%`}</span>
+            <strong>Average interview score</strong>
+            <small>Across completed interviews</small>
+          </article>
+          <article className="dashboard-stat">
+            <span className="dashboard-stat__value">{interviewsLoading ? "--" : latestInterview ? `${Math.round(Number(latestInterview.overall_score))}%` : "--"}</span>
+            <strong>Latest score</strong>
+            <small>{latestInterview?.completed_at ? formatQuizDate(latestInterview.completed_at) : "No completed interview"}</small>
+          </article>
+        </div>
+        <section className="dashboard-panel dashboard-interview-panel">
+          <div className="dashboard-panel__header">
+            <div><span className="auth-eyebrow">Recent activity</span><h3>Recent interviews</h3></div>
+            <Link to="/interview/history" className="dashboard-panel__link">View all</Link>
+          </div>
+          {completedInterviews.length === 0 ? (
+            <div className="dashboard-empty">{interviewsLoading ? "Loading interview history..." : "No completed interviews yet. Start a practice interview to see your results here."}</div>
+          ) : (
+            <ul className="dashboard-list dashboard-interview-list">
+              {completedInterviews.slice(0, 3).map((interview) => (
+                <li key={interview.id} className="dashboard-list__item">
+                  <div><strong>Technical interview</strong><span>Completed</span></div>
+                  <div><strong>{Math.round(Number(interview.overall_score))}%</strong><span>AI evaluation</span></div>
+                  <div><Link to={`/interview/result/${interview.id}`}>View result →</Link></div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </section>
     </main>
   );

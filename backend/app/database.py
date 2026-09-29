@@ -31,7 +31,17 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def initialize_database() -> None:
-    from app.models import Playlist, PlaylistProblem, Problem, QuizResult, User
+    from app.models import (
+        Interview,
+        InterviewAnswer,
+        InterviewQuestion,
+        InterviewResult,
+        Playlist,
+        PlaylistProblem,
+        Problem,
+        QuizResult,
+        User,
+    )
 
     try:
         Base.metadata.create_all(bind=engine)

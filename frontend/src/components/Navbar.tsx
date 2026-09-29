@@ -80,6 +80,7 @@ export default function Navbar() {
                   <Link to="/dashboard">Dashboard</Link>
                   <Link to="/quiz">Quiz</Link>
                   <Link to="/chat">Chat</Link>
+                  <Link to="/interview">Interview Prep</Link>
                 </div>
               {profileOpen && (
                 <div className="ct-profile__menu" role="menu">
